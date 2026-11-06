@@ -1,20 +1,16 @@
 <div align="center">
 
-<img src="Branding/logo_glow_transparent.png" alt="Rivulet" width="220">
+<img src="Branding/dreamcast-tv-option-2.png" alt="DreamCAST TV" width="420">
 
-# Rivulet
+# DreamCAST TV
 
-**Built for simplicity.**
+**A personal, noncommercial fork of [Rivulet](https://github.com/l984-451/Rivulet).**
 
 A native Apple TV app for Plex, Jellyfin, Emby, and Live TV.
 
-<a href="https://apps.apple.com/us/app/rivulet-for-plex/id6756892857">
-  <img src="https://img.shields.io/badge/Download_on_the-App_Store-000000?style=for-the-badge&logo=apple&logoColor=white" alt="Download on the App Store">
-</a>
-&nbsp;
-<a href="https://testflight.apple.com/join/TcCsF5As">
-  <img src="https://img.shields.io/badge/Join_the-TestFlight_Beta-0D96F6?style=for-the-badge&logo=apple&logoColor=white" alt="Join the TestFlight Beta">
-</a>
+The app name and primary tvOS/iOS icons use the DreamCAST TV Option 2 artwork.
+The original Rivulet App Store listing and TestFlight are **not** builds of this fork.
+The original author, code history, and PolyForm Noncommercial license are retained.
 
 </div>
 

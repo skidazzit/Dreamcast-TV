@@ -34,7 +34,7 @@
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Rivulet connects to media servers on your local network, such as your Plex server, to stream your library.</string>
+	<string>DreamCAST TV connects to media servers on your local network, such as your Plex server, to stream your library.</string>
 	<key>NSUserActivityTypes</key>
 	<array>
 		<string>com.rivulet.viewMedia</string>
