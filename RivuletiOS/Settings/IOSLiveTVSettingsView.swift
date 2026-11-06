@@ -36,6 +36,9 @@ struct IOSLiveTVSettingsView: View {
                 } label: {
                     LabeledContent("Favorites", value: store.favoriteIds.isEmpty ? "" : "\(store.favoriteIds.count)")
                 }
+                NavigationLink("Reorder Playlist Groups") {
+                    IOSLiveGroupOrderView()
+                }
                 Picker("Default Layout", selection: $layoutRaw) {
                     ForEach(IOSLiveLayout.allCases, id: \.self) { Text($0.title).tag($0.rawValue) }
                 }
@@ -56,6 +59,39 @@ struct IOSLiveTVSettingsView: View {
             Button("Erase", role: .destructive) { store.forgetViewings() }
             Button("Keep", role: .cancel) {}
         }
+    }
+}
+
+/// Drag channel groups to change their order in the Live TV guide filter.
+private struct IOSLiveGroupOrderView: View {
+    @ObservedObject private var store = LiveTVDataStore.shared
+    @AppStorage(LiveTVGroupOrder.storageKey) private var storedGroupOrder = "[]"
+
+    private var groups: [String] {
+        LiveTVGroupOrder.ordered(
+            store.channels.compactMap(\.groupTitle),
+            saved: (try? JSONDecoder().decode([String].self, from: Data(storedGroupOrder.utf8))) ?? [])
+    }
+
+    var body: some View {
+        List {
+            ForEach(groups, id: \.self) { group in
+                Label(group, systemImage: "line.3.horizontal")
+            }
+            .onMove { from, to in
+                var order = groups
+                order.move(fromOffsets: from, toOffset: to)
+                LiveTVGroupOrder.save(order)
+            }
+        }
+        .overlay {
+            if groups.isEmpty {
+                ContentUnavailableView("No Playlist Groups", systemImage: "list.bullet",
+                                       description: Text("Add or refresh a Live TV source first."))
+            }
+        }
+        .navigationTitle("Playlist Groups")
+        .toolbar { EditButton() }
     }
 }
 

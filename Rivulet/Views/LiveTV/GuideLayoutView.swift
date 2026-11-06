@@ -24,6 +24,7 @@ struct GuideLayoutView: View {
 
     /// Selected category tab. nil = "All Channels"; otherwise an M3U group title.
     @State private var selectedGroup: String?
+    @AppStorage(LiveTVGroupOrder.storageKey) private var storedGroupOrder = "[]"
 
     /// Channels for the current source, before category filtering.
     private var sourceChannels: [UnifiedChannel] {
@@ -64,15 +65,17 @@ struct GuideLayoutView: View {
             groups: sourceChannels.compactMap { $0.groupTitle?.trimmingCharacters(in: .whitespacesAndNewlines) },
             sourceNames: dataStore.sources.map(\.displayName).filter { sourceTabs[$0] != nil },
             // Offered only when there are favourites, so no empty tab.
-            hasFavorites: !dataStore.favorites(in: sourceChannels).isEmpty)
+            hasFavorites: !dataStore.favorites(in: sourceChannels).isEmpty,
+            savedOrder: (try? JSONDecoder().decode([String].self, from: Data(storedGroupOrder.utf8))) ?? [])
     }
 
-    nonisolated static func tabTitles(groups: [String], sourceNames: [String], hasFavorites: Bool) -> [String] {
+    nonisolated static func tabTitles(groups: [String], sourceNames: [String], hasFavorites: Bool,
+                                    savedOrder: [String] = []) -> [String] {
         var seen: Set<String> = []
         let sources = sourceNames.filter { seen.insert($0).inserted }
         let named = Set(groups.filter { !$0.isEmpty })
         let pinned = pinnedGroups.filter { hasFavorites || named.contains($0) }
-        let rest = named.subtracting(sources).subtracting(pinned).sorted()
+        let rest = LiveTVGroupOrder.ordered(Array(named.subtracting(sources).subtracting(pinned)), saved: savedOrder)
         return pinned + sources.filter { !pinned.contains($0) } + rest
     }
 

@@ -229,6 +229,7 @@ enum SettingsContent {
         case .iptv:        return iptv
         case .liveTVSourceDetail: return liveTVSourceDetail
         case .liveTVFavorites: return liveTVFavorites
+        case .liveTVGroups: return liveTVGroups
         case .addLiveTVSource:  return addLiveTVSource
         case .addXtream:        return addXtream
         case .addDispatcharr:   return addDispatcharr
@@ -719,6 +720,7 @@ enum SettingsContent {
         [
             SettingsRowItem(id: "liveTVSources", title: "Live TV Sources", kind: .navigation(.iptv)),
             SettingsRowItem(id: "liveTVFavorites", title: "Favorites", kind: .navigation(.liveTVFavorites)),
+            SettingsRowItem(id: "liveTVGroups", title: "Reorder Playlist Groups", kind: .navigation(.liveTVGroups)),
         ] + liveTVLookRows + [
             toggle("combineSources", "Combine Sources", key: "combineLiveTVSources", default: true),
             toggle("keepPlayingInGuide", "Keep Playing in Guide", key: "liveTVKeepPlayingInGuide", default: true),
@@ -766,6 +768,21 @@ enum SettingsContent {
                     (vc as? SettingsPageViewController)?.reloadRows()
                 }
             }), onReorder: { up in store.moveFavorite(channel.id, up: up) })
+        }
+    }
+
+    /// Hold Select on a group to move it up or down in the Guide.
+    private static var liveTVGroups: [SettingsRowItem] {
+        let groups = LiveTVGroupOrder.ordered(
+            LiveTVDataStore.shared.channels.compactMap(\.groupTitle),
+            saved: LiveTVGroupOrder.saved())
+        guard !groups.isEmpty else {
+            return [SettingsRowItem(id: "noLiveTVGroups", title: "No Playlist Groups Yet", kind: .info(value: { "" }))]
+        }
+        return groups.map { group in
+            SettingsRowItem(id: "group_\(group)", verbatim: group,
+                            kind: .action(destructive: false, handler: { _ in }),
+                            onReorder: { up in LiveTVGroupOrder.move(group, up: up, among: groups) })
         }
     }
 
@@ -1529,11 +1546,13 @@ enum SettingsContent {
             reload()
         case .plex where PlexAuthManager.shared.isAuthenticated:
             loadPlexServers(reload: reload)
-        case .liveTVFavorites where LiveTVDataStore.shared.channels.isEmpty:
+        case .liveTVFavorites, .liveTVGroups:
             // Settings can open before Live TV has loaded its channels.
-            Task { @MainActor in
-                await LiveTVDataStore.shared.loadChannels()
-                reload()
+            if LiveTVDataStore.shared.channels.isEmpty {
+                Task { @MainActor in
+                    await LiveTVDataStore.shared.loadChannels()
+                    reload()
+                }
             }
         default:
             break

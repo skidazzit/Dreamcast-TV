@@ -11,6 +11,7 @@ struct IOSLiveTVView: View {
     @StateObject private var recorder = IOSLiveRecorder()
     @AppStorage(IOSLiveLayout.storageKey) private var layoutRaw = IOSLiveLayout.browse.rawValue
     @AppStorage("iosLiveTVGuideFilter") private var guideFilter = ""
+    @AppStorage(LiveTVGroupOrder.storageKey) private var storedGroupOrder = "[]"
     @State private var selection: IOSLiveProgrammeSelection?
     @State private var pendingPlay: UnifiedChannel?
     @State private var showingAddSource = false
@@ -123,9 +124,9 @@ struct IOSLiveTVView: View {
     }
 
     private var groups: [String] {
-        Set(store.channels.compactMap { $0.groupTitle?.trimmingCharacters(in: .whitespacesAndNewlines) })
-            .filter { !$0.isEmpty }
-            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        LiveTVGroupOrder.ordered(
+            store.channels.compactMap(\.groupTitle),
+            saved: (try? JSONDecoder().decode([String].self, from: Data(storedGroupOrder.utf8))) ?? [])
     }
 
     /// The filtered lineup. A filter whose channels vanished falls back to all.

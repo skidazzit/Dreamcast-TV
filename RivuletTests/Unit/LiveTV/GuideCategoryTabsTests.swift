@@ -22,4 +22,19 @@ final class GuideCategoryTabsTests: XCTestCase {
         XCTAssertEqual(GuideLayoutView.tabTitles(groups: ["Favorites", "A"], sourceNames: [], hasFavorites: false),
                        ["Favorites", "A"])
     }
+
+    func test_savedPlaylistGroupOrderKeepsFavoritesAndSourcesPinned() {
+        XCTAssertEqual(
+            GuideLayoutView.tabTitles(groups: ["Sports", "News", "Movies"],
+                                      sourceNames: ["IPTV"], hasFavorites: true,
+                                      savedOrder: ["Sports", "Movies", "News"]),
+            ["Favorites", "IPTV", "Sports", "Movies", "News"])
+    }
+
+    func test_newAndRemovedGroupsDoNotBreakSavedOrder() {
+        XCTAssertEqual(
+            LiveTVGroupOrder.ordered(["News", "Kids", "Sports", "Kids"],
+                                     saved: ["Sports", "Removed", "Sports", "News"]),
+            ["Sports", "News", "Kids"])
+    }
 }

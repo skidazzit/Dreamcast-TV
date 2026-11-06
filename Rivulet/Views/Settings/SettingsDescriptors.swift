@@ -654,6 +654,7 @@ enum SettingsDescriptorStore {
         case .jellyfin: return ("server.rack", .systemPurple)
         case .emby: return ("server.rack", .systemGreen)
         case .iptv: return ("tv.and.mediabox", .systemBlue)
+        case .liveTVGroups: return ("list.number", .systemBlue)
         case .libraries: return ("sidebar.squares.left", .systemPurple)
         case .homeRows: return ("rectangle.grid.1x2", .systemTeal)
         case .cache: return ("internaldrive", .systemGray)
