@@ -11,7 +11,7 @@
 
 import Foundation
 
-enum League: String, CaseIterable, Codable, Sendable {
+nonisolated enum League: String, CaseIterable, Codable, Sendable {
     case nfl
     case collegeFootball = "college-football"
     case nba, mlb, nhl
@@ -38,7 +38,7 @@ enum League: String, CaseIterable, Codable, Sendable {
     }
 }
 
-struct ScoreTeam: Codable, Hashable, Sendable {
+nonisolated struct ScoreTeam: Codable, Hashable, Sendable {
     let abbr: String
     /// "Chicago Bears".
     let name: String
@@ -50,7 +50,7 @@ struct ScoreTeam: Codable, Hashable, Sendable {
     let logo: URL?
 }
 
-struct ScoreGame: Codable, Hashable, Identifiable, Sendable {
+nonisolated struct ScoreGame: Codable, Hashable, Identifiable, Sendable {
     enum State: String, Codable, Sendable { case pre, `in`, post }
 
     let id: String
@@ -63,7 +63,7 @@ struct ScoreGame: Codable, Hashable, Identifiable, Sendable {
     let home: ScoreTeam
 }
 
-struct Scoreboard: Codable, Equatable, Sendable {
+nonisolated struct Scoreboard: Codable, Equatable, Sendable {
     let league: League
     let fetchedAt: Date
     /// The worker's last good copy, served while ESPN fails.
