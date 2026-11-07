@@ -10,7 +10,7 @@
 
 import Foundation
 
-enum MediaProviderKind: String, Sendable, Hashable, Codable, CaseIterable {
+nonisolated enum MediaProviderKind: String, Sendable, Hashable, Codable, CaseIterable {
     case plex
     case jellyfin
     case emby
