@@ -1401,8 +1401,11 @@ final class EPGLayout: UICollectionViewLayout {
     private var timelineStart = Date()
     private var now = Date()
 
-    private let colW = EPGTheme.channelColumnWidth
-    private let rowH = EPGTheme.rowHeight
+    // Settings can change while the guide controller remains alive. These
+    // must not be captured at layout creation, or the grid and channel cells
+    // use different widths and the logos get clipped at the leading edge.
+    private var colW: CGFloat { EPGTheme.channelColumnWidth }
+    private var rowH: CGFloat { EPGTheme.rowHeight }
     private let headerH = EPGTheme.timelineHeight
     var topOffset: CGFloat = EPGTheme.infoBarHeight
     private var rulerTop: CGFloat { topOffset + EPGTheme.rulerGap }
