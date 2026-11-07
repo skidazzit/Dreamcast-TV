@@ -10,10 +10,12 @@ nonisolated struct DownloadPermissions: Sendable {
     private(set) var answered: Set<String> = []
 
     mutating func ask(_ providers: [any MediaProvider]) async {
-        for provider in providers where !answered.contains(provider.id) {
+        for provider in providers {
+            let id = await provider.id
+            guard !answered.contains(id) else { continue }
             guard let yes = try? await provider.canDownloadMedia() else { continue }
-            answered.insert(provider.id)
-            if yes { allowed.insert(provider.id) }
+            answered.insert(id)
+            if yes { allowed.insert(id) }
         }
     }
 
