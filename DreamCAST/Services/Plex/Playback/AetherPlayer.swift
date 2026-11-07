@@ -1215,6 +1215,12 @@ final class AetherPlayer: PlayerProtocol {
         if !isLive {
             options.forwardBufferSegments = 4
             options.sessionCacheByteBudget = 0
+            if SettingsStore.bool("plexHDR10BaseLayerTest", default: false) {
+                // Diagnostic only: keep Aether's remux route, but omit DV
+                // signalling when the source has an HDR10/HLG base layer.
+                options.dolbyVisionHandling = .baseLayerOnly
+                print("[AetherPlayer] HDR10/HLG base-layer memory test enabled")
+            }
         }
         // New content, so the previous item's aspect ratio describes nothing.
         // Reset HERE rather than when `currentItem` goes nil: the engine also
