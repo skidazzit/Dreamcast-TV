@@ -195,7 +195,7 @@ struct EPGGuide: UIViewRepresentable {
         // keeps cells within the CV's bounds).
         let infoBarInset = topInset ?? (transparent ? 0 : EPGTheme.infoBarHeight)
         layout.topOffset = 0
-        let cv = UICollectionView(frame: .zero, collectionViewLayout: layout)
+        let cv = EPGProgramCollectionView(frame: .zero, collectionViewLayout: layout)
         cv.backgroundColor = .clear
         cv.contentInsetAdjustmentBehavior = .never
         cv.contentInset = UIEdgeInsets(top: layout.gridTopInset,
@@ -225,6 +225,9 @@ struct EPGGuide: UIViewRepresentable {
 
         context.coordinator.collectionView = cv
         context.coordinator.apply(self, to: layout)
+        cv.onVerticalPress = { [weak coordinator = context.coordinator] down in
+            coordinator?.stepChannel(down: down) ?? false
+        }
 
         // Play/Pause jumps back to the now-airing programme.
         let jump = UITapGestureRecognizer(target: context.coordinator,
@@ -728,6 +731,39 @@ struct EPGGuide: UIViewRepresentable {
             container.focusGridCell(at: indexPath, in: cv)
         }
 
+        /// Move by exactly one channel, even when the next row is off-screen.
+        /// The tvOS focus engine can otherwise jump to a distant programme or
+        /// return to the group bar when its geometric target is not visible.
+        @discardableResult
+        func stepChannel(down: Bool) -> Bool {
+            guard let cv = collectionView,
+                  let cell = UIFocusSystem.focusSystem(for: cv)?.focusedItem as? UICollectionViewCell,
+                  let focused = cv.indexPath(for: cell),
+                  let layout = cv.collectionViewLayout as? EPGLayout else { return false }
+            let nextSection = focused.section + (down ? 1 : -1)
+            guard programs.indices.contains(nextSection) else { return down }
+            let time = clampedAnchor(in: cv)
+            guard let item = programIndex(inSection: nextSection, covering: time) else { return true }
+
+            // Realize the target before asking tvOS to focus it. This is needed
+            // for long playlists, where nearby rows may not have cells yet.
+            let rowH = EPGTheme.rowHeight
+            let inset = layout.rulerBottomInset
+            let visibleTop = cv.contentOffset.y + inset
+            let visibleBottom = cv.contentOffset.y + cv.bounds.height - cv.contentInset.bottom
+            let top = CGFloat(nextSection) * rowH
+            let bottom = top + rowH
+            var y = cv.contentOffset.y
+            if top < visibleTop + rowH { y = top - inset - rowH }
+            if bottom > visibleBottom - rowH { y += bottom - (visibleBottom - rowH) }
+            let maxY = max(-cv.contentInset.top,
+                           layout.collectionViewContentSize.height - cv.bounds.height + cv.contentInset.bottom)
+            cv.setContentOffset(CGPoint(x: lockedX, y: min(max(y, -cv.contentInset.top), maxY)), animated: false)
+            cv.layoutIfNeeded()
+            requestFocus(IndexPath(item: item, section: nextSection))
+            return true
+        }
+
         /// Scroll `channelId`'s row into view at the live edge of the timeline
         /// and put focus on its programme airing now. Used when the player
         /// closes, so the guide comes back on the channel that was playing.
@@ -775,6 +811,18 @@ struct EPGFocusRequest: Equatable {
 // Note: `Array.subscript(safe:)` is defined in MultiStreamViewModel.swift and
 // reused here.
 
+/// Route physical D-pad vertical presses through the row index, not geometric
+/// tvOS focus guesses. Horizontal presses retain the normal focus engine.
+private final class EPGProgramCollectionView: UICollectionView {
+    var onVerticalPress: ((Bool) -> Bool)?
+
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if let press = presses.first(where: { $0.type == .downArrow || $0.type == .upArrow }),
+           onVerticalPress?(press.type == .downArrow) == true { return }
+        super.pressesBegan(presses, with: event)
+    }
+}
+
 // MARK: - Container (collection view + fade under the column)
 
 final class EPGContainerView: UIView {
@@ -794,7 +842,7 @@ final class EPGContainerView: UIView {
     private var pendingMiniPlayerFocus = false
     private var preferredDownChannelID: String?
     private var focusPreferredDownChannel: ((String) -> Void)?
-    private var gridUpSwipeBinding: DirectionalInputBinding?
+    private var gridVerticalSwipeBinding: DirectionalInputBinding?
     /// The channel still playing after Back, in the corner (issue #318).
     private let miniPlayer = LiveMiniPlayerView()
     private var onMiniPlayerSelect: (() -> Void)?
@@ -834,18 +882,24 @@ final class EPGContainerView: UIView {
             Task { @MainActor [weak self] in self?.setClock(Date()) }
         }
         categoryBar.onMoveDown = { [weak self] in self?.moveFocusIntoGrid() }
-        gridUpSwipeBinding = DirectionalInputBinding(
+        gridVerticalSwipeBinding = DirectionalInputBinding(
             gatedSwipesOn: cv,
-            directions: [.up],
+            directions: [.up, .down],
             shouldHandle: { [weak cv] direction in
-                guard direction == .up, let cv,
+                guard (direction == .up || direction == .down), let cv,
                       let focused = UIFocusSystem.focusSystem(for: cv)?.focusedItem as? UICollectionViewCell,
-                      let indexPath = cv.indexPath(for: focused)
-                else { return false }
-                return indexPath.section == 0
+                      cv.indexPath(for: focused) != nil else { return false }
+                return true
             },
-            onSwipe: { [weak self] _ in
-                self?.moveFocusToCategories()
+            onSwipe: { [weak self, weak cv] direction in
+                guard let self, let cv else { return }
+                if direction == .up,
+                   let cell = UIFocusSystem.focusSystem(for: cv)?.focusedItem as? UICollectionViewCell,
+                   cv.indexPath(for: cell)?.section == 0 {
+                    self.moveFocusToCategories()
+                } else {
+                    _ = (cv as? EPGProgramCollectionView)?.onVerticalPress?(direction == .down)
+                }
             })
 
         miniPlayer.isFocusable = true
