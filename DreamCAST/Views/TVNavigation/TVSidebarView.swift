@@ -57,6 +57,7 @@ struct TVSidebarView: View {
     @AppStorage("setupComplete") private var setupComplete = SetupLandingViewController.hasAnySource
     @State private var showWhatsNew = false
     @State private var didApplyDebugLaunch = false
+    @State private var didScheduleLiveTVAutoplay = false
 
     @Namespace private var contentNamespace
 
@@ -335,6 +336,15 @@ struct TVSidebarView: View {
             // Start background preloading of Live TV data (low priority)
             liveTVDataStore.startBackgroundPreload()
         }
+        .onChange(of: liveTVDataStore.channels.count, initial: true) { _, _ in
+            scheduleLaunchLiveTVAutoplay()
+        }
+        .onChange(of: setupComplete) { _, _ in
+            scheduleLaunchLiveTVAutoplay()
+        }
+        .onChange(of: isAwaitingProfileSelection) { _, awaiting in
+            if !awaiting { scheduleLaunchLiveTVAutoplay() }
+        }
         .onChange(of: deepLinkHandler.pendingPlayback) { _, metadata in
             guard let metadata else { return }
             deepLinkHandler.pendingPlayback = nil
@@ -360,6 +370,7 @@ struct TVSidebarView: View {
         // Settings → Changelog (not a separate SwiftUI dialog) for consistency.
         .onChange(of: showWhatsNew) { _, show in
             if show { presentWhatsNewPopup() }
+            else { scheduleLaunchLiveTVAutoplay() }
         }
         .onAppear {
             MusicNowPlayingViewController.installPresenter()
@@ -627,6 +638,30 @@ struct TVSidebarView: View {
     }
 
     // MARK: - Tab Content
+
+    /// Launch only, never when returning to the guide or bringing the app forward.
+    /// Wait for the saved lineup; no playlist or EPG fetch is needed here.
+    private func scheduleLaunchLiveTVAutoplay() {
+        guard !didScheduleLiveTVAutoplay,
+              SettingsStore.bool("liveTVAutoPlayLastWatched", default: false),
+              setupComplete, !isAwaitingProfileSelection, !showProfilePicker,
+              !showWhatsNew,
+              let lastId = liveTVDataStore.recentChannelIds.first,
+              liveTVDataStore.channels.contains(where: { $0.id == lastId }) else { return }
+        didScheduleLiveTVAutoplay = true
+        Task { @MainActor in
+            // Give the root shell time to mount before presenting a full-screen player.
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled, setupComplete,
+                  !isAwaitingProfileSelection, !showProfilePicker, !showWhatsNew,
+                  let channel = liveTVDataStore.channels.first(where: { $0.id == lastId }),
+                  let top = LiveProgramMenu.topViewController(),
+                  top.presentedViewController == nil else { return }
+            let player = LiveTVAetherPlayerViewController(channel: channel)
+            player.modalPresentationStyle = .fullScreen
+            top.present(player, animated: true)
+        }
+    }
 
     /// Builds one tab's content view controller for the UIKit shell. UIKit
     /// surfaces mount directly: a hosting controller is not focusable in its
