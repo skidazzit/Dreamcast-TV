@@ -94,6 +94,16 @@ enum LiveProgramMenu {
             title: isFavorite ? "Remove from Favorites" : "Add to Favorites",
             systemImage: isFavorite ? "star.slash" : "star"
         ) { store.toggleFavorite(channel) })
+        watch.append(TileMenuAction(title: "Edit Channel Name", systemImage: "pencil") {
+            let entry = TextEntryViewController(
+                title: "Channel Name",
+                message: "Change this channel's guide label. Leave blank to use the playlist name.",
+                initialText: LiveTVChannelNames.customName(for: channel.id) ?? LiveTVChannelNames.displayName(for: channel),
+                onCommit: { value in
+                    LiveTVChannelNames.setCustomName(value, for: channel.id)
+                })
+            presenter.present(entry, animated: true)
+        })
 
         if let program, !program.id.contains(":placeholder:"),
            program.endTime > Date(), store.canRecord(channel) {
