@@ -9,7 +9,7 @@ import re
 import subprocess
 import sys
 
-PATH = "Rivulet.xcodeproj/project.pbxproj"
+PATH = "DreamCAST.xcodeproj/project.pbxproj"
 REF = re.compile(r'(\t\t(\w+) /\* XCRemoteSwiftPackageReference "([^"]+)" \*/ = \{\n.*?)(\n\t\t\};)', re.S)
 TRAITS = re.compile(r'\n\t\t\ttraits = \(\n.*?\n\t\t\t\);', re.S)
 

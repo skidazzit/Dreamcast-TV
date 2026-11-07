@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 # Upload dSYMs to Sentry so release crash / App Hang stack traces symbolicate
-# (see RIVULET-41). Invoked as an Xcode "Run Script" build phase on the Rivulet
+# (see DREAMCAST-41). Invoked as an Xcode "Run Script" build phase on the DreamCAST
 # app target.
 #
 # Behaviour:
@@ -65,13 +65,13 @@ echo "sentry: uploading dSYMs (config=${CONFIGURATION:-?}, platform=${PLATFORM_N
 # and the embedded frameworks/extension.
 export SENTRY_PROPERTIES="${RC}"
 
-# Upload the dSYMs Xcode produced for OUR code (Rivulet.app + TopShelfExtension).
+# Upload the dSYMs Xcode produced for OUR code (DreamCAST.app + TopShelfExtension).
 #
 # The embedded third-party frameworks (FFmpeg Libav*/Libsw*/Libzimg, Libdav1d,
 # Sentry) ship as STRIPPED prebuilt binaries from their SPM packages — they have
 # no DWARF debug_info, so no dSYM exists to upload for them. That's expected and
-# harmless here: RIVULET-41 and our crashes are in Swift on the main thread,
-# which Rivulet.app's dSYM covers. Apple's "Upload Symbols Failed" warnings in
+# harmless here: DREAMCAST-41 and our crashes are in Swift on the main thread,
+# which DreamCAST.app's dSYM covers. Apple's "Upload Symbols Failed" warnings in
 # Organizer are about those same stripped frameworks for APPLE's crash reporting
 # (which we don't use) — uncheck "Upload your app's symbols" at archive time to
 # silence them. There is nothing to fix on our side.

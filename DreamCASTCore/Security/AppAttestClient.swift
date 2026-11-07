@@ -1,0 +1,335 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+// Copyright (C) 2025-2026 Bain Gurley
+
+//
+//  AppAttestClient.swift
+//  DreamCAST
+//
+//  Proves to our Cloudflare Workers that a request came from the genuine app on
+//  Apple hardware: attest once per device, then sign every request with the
+//  Secure Enclave key. Failure is soft: the request goes out unsigned.
+//
+
+import Foundation
+import DeviceCheck
+import CryptoKit
+import os
+import Sentry
+
+private let log = Logger(subsystem: "com.dreamcast.app", category: "AppAttest")
+
+actor AppAttestClient {
+    static let shared = AppAttestClient()
+
+    private let service = DCAppAttestService.shared
+    private let baseURL: URL
+    private let session: URLSession
+
+    /// The attested key id, once we have one. Persisted in the Keychain so a
+    /// device attests once for its lifetime, not once per launch.
+    private var keyId: String?
+
+    /// Serializes enrollment so a burst of concurrent requests at launch
+    /// triggers exactly one attestation, not N.
+    private var enrollment: Task<String?, Never>?
+
+    /// The last assertion started; the next one waits for it.
+    private var assertionTail: Task<Void, Never>?
+
+    /// After a failed enrollment, stop hammering Apple / the Worker for a while:
+    /// one minute, doubling per consecutive failure up to an hour.
+    private var backoffUntil: Date?
+    private var enrollmentFailures = 0
+    private static let backoff: TimeInterval = 60
+    private static let maxBackoff: TimeInterval = 60 * 60
+
+    /// A key that fails assertions with `invalidInput` is discarded once per launch.
+    /// Once only: if a fresh key fails the same way, re-enrolling per request would cost more.
+    private var discardedForInvalidInput = false
+
+    init(baseURL: URL = InsightsConfig.apiBaseURL, session: URLSession = .shared) {
+        self.baseURL = baseURL
+        self.session = session
+        self.keyId = Keychain.load(Self.keychainAccount)
+    }
+
+    private static let keychainAccount = "app-attest-key-id"
+
+    /// True on real hardware, false in the Simulator (no Secure Enclave).
+    nonisolated var isSupported: Bool { DCAppAttestService.shared.isSupported }
+
+    /// Whether `attest` signed the request (an assertion, or the Simulator's dev key).
+    nonisolated static func isSigned(_ request: URLRequest) -> Bool {
+        request.value(forHTTPHeaderField: "X-DreamCAST-Assertion") != nil
+            || request.value(forHTTPHeaderField: "X-DreamCAST-Dev-Key") != nil
+    }
+
+    // MARK: - Signing
+
+    /// Attach attestation headers to a request, enrolling this device first if
+    /// needed. Returns the request unchanged if attestation is unavailable —
+    /// the caller always gets a usable request.
+    func attest(_ request: URLRequest) async -> URLRequest {
+        #if DEBUG
+        // The Simulator has no Secure Enclave, so App Attest cannot work there.
+        // A dev key (never present in a release build) keeps the sim usable.
+        if !isSupported, let devKey = Self.devKey {
+            var r = request
+            r.setValue(devKey, forHTTPHeaderField: "X-DreamCAST-Dev-Key")
+            return r
+        }
+        #endif
+
+        guard isSupported else { return request }
+        guard let keyId = await currentKeyId() else { return request }
+
+        // The client data we sign must be byte-for-byte what the Worker
+        // reconstructs. POST: the exact body. GET: path+query+timestamp.
+        var r = request
+        let clientData: Data
+        if let body = request.httpBody, !body.isEmpty {
+            clientData = body
+        } else {
+            let ts = String(Int(Date().timeIntervalSince1970 * 1000))
+            r.setValue(ts, forHTTPHeaderField: "X-DreamCAST-Timestamp")
+            guard let url = request.url,
+                  let comps = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+                return request
+            }
+            // Percent-encoded, as sent: the Worker rebuilds it from the raw URL, so a
+            // decoded `|` in Discover's genre list never matched (bad_signature).
+            let query = comps.percentEncodedQuery.map { "?\($0)" } ?? ""
+            clientData = Data("\(comps.percentEncodedPath)\(query)\n\(ts)".utf8)
+        }
+
+        do {
+            let digest = Data(SHA256.hash(data: clientData))
+            // One assertion at a time: a burst of concurrent calls on one key
+            // (five scoreboards at once) failed some and went out unsigned.
+            let previous = assertionTail
+            let task = Task { [service] in
+                await previous?.value
+                return try await service.generateAssertion(keyId, clientDataHash: digest)
+            }
+            assertionTail = Task { _ = try? await task.value }
+            let assertion = try await task.value
+            r.setValue(keyId, forHTTPHeaderField: "X-DreamCAST-Key-Id")
+            r.setValue(assertion.base64EncodedString(), forHTTPHeaderField: "X-DreamCAST-Assertion")
+            return r
+        } catch {
+            reportFailure("App Attest assertion failed", step: "generateAssertion", error: error)
+            // A key the Secure Enclave no longer recognises (restored backup,
+            // reinstall) is dead. `invalidInput` on a key that used to work has
+            // stuck devices unsigned for days, so it gets one fresh key per launch.
+            switch (error as? DCError)?.code {
+            case .invalidKey:
+                invalidateKey(ifCurrent: keyId)
+            case .invalidInput where !discardedForInvalidInput:
+                discardedForInvalidInput = true
+                invalidateKey(ifCurrent: keyId)
+            default:
+                break
+            }
+            return request
+        }
+    }
+
+    /// The Worker doesn't know this key: discard it and re-enroll on the next request.
+    /// `ifCurrent` names the key the failed request used, so a burst of failures
+    /// re-enrolls once instead of discarding each other's new keys.
+    func invalidateKey(ifCurrent used: String? = nil) {
+        if let used, used != keyId { return }
+        keyId = nil
+        Keychain.delete(Self.keychainAccount)
+    }
+
+    // MARK: - Enrollment
+
+    private func currentKeyId() async -> String? {
+        if let keyId { return keyId }
+
+        if let until = backoffUntil, Date() < until { return nil }
+
+        // Coalesce: many requests can land at launch; only one should enroll.
+        if let inFlight = enrollment { return await inFlight.value }
+
+        let task = Task<String?, Never> { [weak self] in
+            guard let self else { return nil }
+            return await self.enroll()
+        }
+        enrollment = task
+        let result = await task.value
+        enrollment = nil
+        return result
+    }
+
+    private func enroll() async -> String? {
+        var step = "generateKey"
+        do {
+            let newKeyId = try await service.generateKey()
+
+            // The challenge must come from the server and be single-use;
+            // otherwise a captured attestation could be replayed.
+            step = "challenge"
+            let challenge = try await fetchChallenge()
+            let digest = Data(SHA256.hash(data: Data(challenge.utf8)))
+            step = "attestKey"
+            let attestation = try await service.attestKey(newKeyId, clientDataHash: digest)
+
+            step = "verify"
+            try await postAttestation(keyId: newKeyId, attestation: attestation, challenge: challenge)
+
+            // Only persist AFTER the Worker accepts it — a key it never
+            // registered is worse than no key (every request would 401).
+            Keychain.save(Self.keychainAccount, value: newKeyId)
+            keyId = newKeyId
+            log.notice("device attested")
+            DiagLog.notice(.attest, "Device attested")
+            SentryBridge.log(.info, "App Attest enrolled", attributes: ["component": "app_attest"])
+            enrollmentFailures = 0
+            return newKeyId
+        } catch {
+            reportFailure("App Attest enrollment failed", step: step, error: error, always: true)
+            let delay = min(Self.backoff * pow(2, Double(enrollmentFailures)), Self.maxBackoff)
+            enrollmentFailures += 1
+            backoffUntil = Date().addingTimeInterval(delay)
+            return nil
+        }
+    }
+
+    private struct ChallengeResponse: Decodable { let challenge: String }
+
+    private func fetchChallenge() async throws -> String {
+        let url = baseURL.appendingPathComponent("attest/challenge")
+        let (data, response) = try await session.data(from: url)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw AttestClientError.challengeFailed(status: (response as? HTTPURLResponse)?.statusCode ?? -1)
+        }
+        return try JSONDecoder().decode(ChallengeResponse.self, from: data).challenge
+    }
+
+    private struct VerifyBody: Encodable {
+        let keyId: String
+        let attestationObject: String
+        let challenge: String
+    }
+
+    private func postAttestation(keyId: String, attestation: Data, challenge: String) async throws {
+        let url = baseURL.appendingPathComponent("attest/verify")
+        var r = URLRequest(url: url)
+        r.httpMethod = "POST"
+        r.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        r.httpBody = try JSONEncoder().encode(VerifyBody(
+            keyId: keyId,
+            attestationObject: attestation.base64EncodedString(),
+            challenge: challenge,
+        ))
+        let (data, response) = try await session.data(for: r)
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            // The Worker answers {"error":"<reason>"}: a fixed code, never anything secret.
+            throw AttestClientError.verifyRejected(
+                status: (response as? HTTPURLResponse)?.statusCode ?? -1,
+                reason: String(decoding: data.prefix(80), as: UTF8.self))
+        }
+    }
+
+    private var lastReportAt: Date?
+
+    /// Sends a failure to Sentry Logs (searchable by device, no user action needed) and the
+    /// diagnostics log. Assertion failures can repeat per request, so they report once a minute.
+    private func reportFailure(_ message: String, step: String, error: Error, always: Bool = false) {
+        if !always, let last = lastReportAt, Date().timeIntervalSince(last) < 60 { return }
+        lastReportAt = Date()
+        let ns = error as NSError
+        let detail = (error as? AttestClientError).map { "\($0)" } ?? ns.localizedDescription
+        log.error("\(message, privacy: .public) at \(step, privacy: .public): \(ns.domain, privacy: .public) \(ns.code) \(detail, privacy: .public)")
+        DiagLog.error(.attest, "\(message) at \(step): \(ns.domain) \(ns.code) \(detail)")
+        SentryBridge.log(.warn, message, attributes: [
+            "component": "app_attest",
+            "step": step,
+            "error_domain": ns.domain,
+            "error_code": ns.code,
+            "detail": detail,
+            "supported": isSupported,
+            "had_key": keyId != nil,
+        ])
+    }
+
+    /// A Worker refused a request: `attestation_required` with `signed` false means it went out
+    /// unsigned (no key yet, or enrollment backing off); anything else names the check that failed.
+    func reportRejection(reason: String, path: String, signed: Bool) {
+        if let last = lastReportAt, Date().timeIntervalSince(last) < 60 { return }
+        lastReportAt = Date()
+        let route = path.split(separator: "/").prefix(2).joined(separator: "/")
+        log.error("Worker rejected \(route, privacy: .public): \(reason, privacy: .public) signed=\(signed)")
+        DiagLog.error(.attest, "Worker rejected \(route): \(reason) signed=\(signed) key=\(keyId != nil)")
+        SentryBridge.log(.warn, "App Attest request rejected", attributes: [
+            "component": "app_attest",
+            "route": route,
+            "reason": reason,
+            "signed": signed,
+            "had_key": keyId != nil,
+            "in_backoff": backoffUntil.map { Date() < $0 } ?? false,
+            "supported": isSupported,
+        ])
+    }
+
+    /// Dev-only bypass for the Simulator. Read from the build environment so
+    /// the value is never committed, and the whole path is `#if DEBUG` so it
+    /// cannot exist in a release binary.
+    #if DEBUG
+    private static var devKey: String? {
+        ProcessInfo.processInfo.environment["DREAMCAST_DEV_KEY"]
+    }
+    #endif
+}
+
+enum AttestClientError: Error {
+    case challengeFailed(status: Int)
+    case verifyRejected(status: Int, reason: String)
+}
+
+// MARK: - Keychain
+
+/// The key id is not secret (it's a public identifier), but it must SURVIVE
+/// app updates and be device-local. UserDefaults would be wiped on reinstall,
+/// forcing a needless re-attest; the Keychain persists.
+private enum Keychain {
+    private static let service = "com.gstudios.dreamcast.attest"
+
+    static func save(_ account: String, value: String) {
+        let q: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        SecItemDelete(q as CFDictionary)
+        var add = q
+        add[kSecValueData as String] = Data(value.utf8)
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        SecItemAdd(add as CFDictionary, nil)
+    }
+
+    static func load(_ account: String) -> String? {
+        let q: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+        ]
+        var out: CFTypeRef?
+        guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess,
+              let data = out as? Data else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    static func delete(_ account: String) {
+        let q: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+        ]
+        SecItemDelete(q as CFDictionary)
+    }
+}

@@ -1,19 +1,19 @@
 #!/bin/zsh
 # PLEX_TOKEN=… shoot.sh <simulator udid> <out dir>: iOS and iPadOS shots from the demo libraries (see
 # demo/README.md). Needs the Debug iOS app installed and serve.sh running. Shows only "…-demo" libraries (see
-# RivuletiOS/IOSScreenshotMode.swift). Captions: caption.py.
+# DreamCASTiOS/IOSScreenshotMode.swift). Captions: caption.py.
 UDID=$1; OUT=$2; SERVER=${PLEX_SERVER:-http://192.168.1.140:32410}
 : ${PLEX_TOKEN:?set PLEX_TOKEN}
 LIVE=http://$(ipconfig getifaddr en0):8765
 # Every other server on the account stays out of the shots.
-HIDE=$(curl -s "https://plex.tv/api/v2/resources?X-Plex-Token=$PLEX_TOKEN&X-Plex-Client-Identifier=rivulet-shots" \
+HIDE=$(curl -s "https://plex.tv/api/v2/resources?X-Plex-Token=$PLEX_TOKEN&X-Plex-Client-Identifier=dreamcast-shots" \
   -H Accept:application/json | python3 -c "import json,sys;print('('+','.join(r['clientIdentifier'] for r in json.load(sys.stdin) if 'server' in r['provides'])+')')")
 mkdir -p $OUT
 
 shot() {
   local name=$1; shift
-  xcrun simctl terminate $UDID com.gstudios.rivulet >/dev/null 2>&1
-  xcrun simctl launch $UDID com.gstudios.rivulet -screenshotToken $PLEX_TOKEN -screenshotServer $SERVER \
+  xcrun simctl terminate $UDID com.gstudios.dreamcast >/dev/null 2>&1
+  xcrun simctl launch $UDID com.gstudios.dreamcast -screenshotToken $PLEX_TOKEN -screenshotServer $SERVER \
     -plexDisabledServers $HIDE "$@" >/dev/null
   sleep ${WAIT:-16}
   xcrun simctl io $UDID screenshot --type=png "$OUT/$name.png" >/dev/null 2>&1 && echo "$OUT/$name.png"

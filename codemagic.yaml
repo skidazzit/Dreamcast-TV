@@ -1,6 +1,6 @@
 workflows:
-  rivulet-tvos-testflight:
-    name: Rivulet tvOS → TestFlight
+  dreamcast-tvos-testflight:
+    name: DreamCAST tvOS → TestFlight
     instance_type: mac_mini_m2
     max_build_duration: 90
 
@@ -9,11 +9,11 @@ workflows:
 
     environment:
       groups:
-        - rivulet
+        - dreamcast
       vars:
-        XCODE_SCHEME: "Rivulet"
-        XCODE_PROJECT: "Rivulet.xcodeproj"
-        BUNDLE_ID: "com.gstudios.rivulet"
+        XCODE_SCHEME: "DreamCAST"
+        XCODE_PROJECT: "DreamCAST.xcodeproj"
+        BUNDLE_ID: "com.gstudios.dreamcast"
         APP_STORE_APPLE_ID: 6756892857
       # Keep this the Xcode you build with locally; the GitHub build checks
       # read it. Older compilers time out type-checking code newer ones accept.
@@ -55,7 +55,7 @@ workflows:
             --type TVOS_APP_STORE \
             --certificate-key @file:"$CM_BUILD_DIR/cert_key.pem" \
             --create
-          # Needs the App Groups capability (group.com.bain.Rivulet) on its App ID.
+          # Needs the App Groups capability (group.com.bain.DreamCAST) on its App ID.
           app-store-connect fetch-signing-files "${BUNDLE_ID}.AssetPackExtension" \
             --platform IOS \
             --type TVOS_APP_STORE \
@@ -75,14 +75,14 @@ workflows:
 
       - name: Generate Secrets.swift from env
         script: |
-          cat > RivuletCore/Config/Secrets.swift <<EOF
+          cat > DreamCASTCore/Config/Secrets.swift <<EOF
           import Foundation
 
           enum Secrets {
               static let sentryDSN = "${SENTRY_DSN:-}"
           }
           EOF
-          echo "Wrote RivuletCore/Config/Secrets.swift (dsn set: $([ -n "${SENTRY_DSN:-}" ] && echo yes || echo no))"
+          echo "Wrote DreamCASTCore/Config/Secrets.swift (dsn set: $([ -n "${SENTRY_DSN:-}" ] && echo yes || echo no))"
 
       - name: Set build number from the tag
         script: |
@@ -161,7 +161,7 @@ workflows:
           fi
           GH_TOKEN="$GITHUB_TOKEN" gh release create "$CM_TAG" \
             --repo "$CM_REPO_SLUG" \
-            --title "Rivulet $CM_TAG" \
+            --title "DreamCAST $CM_TAG" \
             --generate-notes \
             "$IPA" \
           || GH_TOKEN="$GITHUB_TOKEN" gh release upload "$CM_TAG" "$IPA" \
@@ -177,10 +177,10 @@ workflows:
         auth: integration
         submit_to_testflight: true
         beta_groups:
-          - Rivulet External Plex Forum
+          - DreamCAST External Plex Forum
 
-  rivulet-ios-testflight:
-    name: Rivulet iOS → TestFlight
+  dreamcast-ios-testflight:
+    name: DreamCAST iOS → TestFlight
     instance_type: mac_mini_m2
     max_build_duration: 90
 
@@ -189,11 +189,11 @@ workflows:
 
     environment:
       groups:
-        - rivulet
+        - dreamcast
       vars:
-        XCODE_SCHEME: "Rivulet iOS"
-        XCODE_PROJECT: "Rivulet.xcodeproj"
-        BUNDLE_ID: "com.gstudios.rivulet"
+        XCODE_SCHEME: "DreamCAST iOS"
+        XCODE_PROJECT: "DreamCAST.xcodeproj"
+        BUNDLE_ID: "com.gstudios.dreamcast"
         APP_STORE_APPLE_ID: 6756892857
       xcode: 27.2
 
@@ -248,15 +248,15 @@ workflows:
 
       - name: Generate Secrets.swift from env
         script: |
-          mkdir -p RivuletCore/Config
-          cat > RivuletCore/Config/Secrets.swift <<EOF
+          mkdir -p DreamCASTCore/Config
+          cat > DreamCASTCore/Config/Secrets.swift <<EOF
           import Foundation
 
           enum Secrets {
               static let sentryDSN = "${SENTRY_DSN:-}"
           }
           EOF
-          echo "Wrote RivuletCore/Config/Secrets.swift (dsn set: $([ -n "${SENTRY_DSN:-}" ] && echo yes || echo no))"
+          echo "Wrote DreamCASTCore/Config/Secrets.swift (dsn set: $([ -n "${SENTRY_DSN:-}" ] && echo yes || echo no))"
 
       - name: Set build number from the tag
         script: |
@@ -291,7 +291,7 @@ workflows:
             --archive-flags="-destination 'generic/platform=iOS' -onlyUsePackageVersionsFromResolvedFile"
 
       # Without this the in-app frames on iOS crash and app-hang events resolve
-      # as <unknown>, which is what made RIVULET-41 unreadable on tvOS.
+      # as <unknown>, which is what made DREAMCAST-41 unreadable on tvOS.
       - name: Upload dSYMs to Sentry
         ignore_failure: true
         script: |
@@ -317,4 +317,4 @@ workflows:
         auth: integration
         submit_to_testflight: true
         beta_groups:
-          - Rivulet External Plex Forum
+          - DreamCAST External Plex Forum

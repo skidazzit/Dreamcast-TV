@@ -24,8 +24,8 @@ For a fresh checkout:
 cd ~/Desktop
 git clone --branch free-device-testing https://github.com/skidazzit/Dreamcast-TV.git DreamCAST-TV-Test
 cd DreamCAST-TV-Test
-cp RivuletCore/Config/Secrets.swift.template RivuletCore/Config/Secrets.swift
-open Rivulet.xcodeproj
+cp DreamCASTCore/Config/Secrets.swift.template DreamCASTCore/Config/Secrets.swift
+open DreamCAST.xcodeproj
 ```
 
 If you already cloned the repository, commit or stash any local edits before switching:
@@ -34,8 +34,8 @@ If you already cloned the repository, commit or stash any local edits before swi
 cd ~/Desktop/Dreamcast-TV
 git fetch origin
 git switch --track origin/free-device-testing
-cp RivuletCore/Config/Secrets.swift.template RivuletCore/Config/Secrets.swift
-open Rivulet.xcodeproj
+cp DreamCASTCore/Config/Secrets.swift.template DreamCASTCore/Config/Secrets.swift
+open DreamCAST.xcodeproj
 ```
 
 The template contains placeholders. Do not commit personal keys, passwords, or tokens.
@@ -44,13 +44,13 @@ The template contains placeholders. Do not commit personal keys, passwords, or t
 
 1. Open **Xcode → Settings → Accounts** and sign in.
 2. Confirm your account appears as **Personal Team**.
-3. In the project, select target **Rivulet** (the tvOS app, branded DreamCAST TV).
+3. In the project, select target **DreamCAST** (the tvOS app, branded DreamCAST TV).
 4. Under **Signing & Capabilities**, enable **Automatically manage signing**.
 5. Select your **Personal Team**. Do not select the original author's team.
 6. Confirm bundle ID `com.skidazzit.dreamcasttv.dev`. If already taken in your Personal Team,
    choose another unique ID, such as `com.<yourname>.dreamcasttv.dev`.
 
-Use the **Rivulet** scheme for tvOS. Do not use **Rivulet iOS**.
+Use the **DreamCAST** scheme for tvOS. Do not use **DreamCAST iOS**.
 
 ## 3. Pair the Apple TV 4K
 
@@ -64,7 +64,7 @@ The app requires tvOS 26 or newer. Xcode must include tvOS platform support.
 
 ## 4. Build and run
 
-1. Select **Rivulet → Apple TV 4K** as scheme and run destination.
+1. Select **DreamCAST → Apple TV 4K** as scheme and run destination.
 2. Select **Product → Run** (Command-R).
 3. Let Xcode create the Personal Team provisioning profile and install the app.
 4. Open DreamCAST TV and test the Live TV source, guide, and playlist group order.
@@ -76,7 +76,7 @@ and move it up or down. Reopen the guide and check that the order was saved.
 
 - **No Apple TV in Xcode:** Check both devices are on the same network, reopen
   the pairing screen, and ensure Xcode sees the device.
-- **Signing error:** Confirm the Rivulet tvOS target uses Personal Team,
+- **Signing error:** Confirm the DreamCAST tvOS target uses Personal Team,
   automatic signing, and your own unique bundle ID.
 - **Unsupported capability:** Confirm you are on `free-device-testing`, not `main`.
   Send the full Xcode error so we can check the exact target.

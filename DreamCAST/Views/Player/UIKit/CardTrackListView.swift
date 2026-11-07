@@ -1,0 +1,882 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+// Copyright (C) 2025-2026 Bain Gurley
+
+import UIKit
+
+// MARK: - CardTrackListView
+
+/// A choice menu in the rail's glass popup, cloned from AVKit's tvOS 26 tool
+/// menus (`AVUnifiedPlayerContextMenuViewController`). Metrics were read from
+/// AVKit's live view tree (DEBUG `AVKitScrubProbe`, DREAMCAST_SCRUBPROBE=menus):
+/// a 70pt section header, 66pt rows (86 with a second line), a checkmark column,
+/// and a focused row that turns into a white pill. Fills the popup edge to edge;
+/// its own insets match AVKit's.
+final class CardTrackListView: UIView, RailPanelMenuHandling {
+
+    /// AVKit's menus are a fixed 450pt wide.
+    static let menuWidth: CGFloat = 450
+
+    fileprivate enum Metrics {
+        static let headerHeight: CGFloat = 70
+        static let headerLabelCenterY: CGFloat = 39.5
+        static let headerLabelLeading: CGFloat = 35
+        static let rowInset: CGFloat = 21
+        static let bottomInset: CGFloat = 18
+        static let separatorInset: CGFloat = 15
+        static let separatorGap: CGFloat = 18
+        static let rowHeight: CGFloat = 66
+        static let twoLineRowHeight: CGFloat = 86
+        static let checkColumnX: CGFloat = 21
+        static let checkColumnWidth: CGFloat = 32
+        static let titleX: CGFloat = 69
+        static let rowRadius: CGFloat = 33
+        /// Focused rows grow 4pt each side, and their content scales to match.
+        static let focusGrowth: CGFloat = 4
+        static let focusScale: CGFloat = 416 / 408
+        static let titleFont = UIFont.systemFont(ofSize: 25, weight: .medium)
+        static let secondaryFont = UIFont.systemFont(ofSize: 23, weight: .medium)
+        /// AVKit draws secondary text white 0.5 and rules white 0.3 plus-lighter over
+        /// its glass; these normal-blend alphas land on the same pixels over it.
+        static let secondaryColor = UIColor.white.withAlphaComponent(0.8)
+        static let separatorColor = UIColor.white.withAlphaComponent(0.46)
+    }
+
+    struct Row {
+        let title: String
+        let subtitle: String?
+        let trackId: Int?
+        let isSelected: Bool
+    }
+
+    private let rows: [Row]
+    private let actions: [CardActionConfig]
+    private let choices: [CardChoiceConfig]
+    private let toggles: [CardToggleConfig]
+    private let steppers: [CardStepperConfig]
+    private let onSelect: (Int?) -> Void
+    private let header: String
+    private let headerLabel = UILabel()
+    /// The choice whose options are showing in place of the menu, AVKit's submenu.
+    private var openChoice: Int?
+    private weak var pendingFocus: UIView?
+    private let scrollView = UIScrollView()
+    private let stack = UIStackView()
+    private var rowButtons: [CardTrackRowButton] = []
+    /// The rows built from `rows` (tracks and Off), wherever they sit in the menu.
+    private var trackButtons: [CardTrackRowButton] = []
+    /// Set: the adjustments lead under `header`, the tracks follow under this.
+    private let trackHeader: String?
+    private var stepperRows: [CardStepperRowView] = []
+    /// AVKit's Language submenu: the tracks, one level in from On and Off. Empty: tracks list in place.
+    private let languageRows: [Row]
+    private let languageValue: String?
+    private var showsLanguages = false
+    private weak var languageButton: CardTrackRowButton?
+    /// Pin focus to the selected row only for the FIRST landing. After focus
+    /// has entered the list once, `preferredFocusEnvironments` holds the row
+    /// focus is on, so an edge press stops instead of bouncing to the selection.
+    private var hasPinnedInitialFocus = false
+    /// The control focus is on: a track row or a stepper row.
+    private weak var lastFocusedControl: UIView?
+
+    /// `audio` titles each row by language with a format line ("TrueHD 7.1 Atmos").
+    convenience init(header: String, tracks: [MediaTrack], selectedTrackId: Int?, showsOffRow: Bool,
+                     audio: Bool = false, trackHeader: String? = nil,
+                     actions: [CardActionConfig] = [], choices: [CardChoiceConfig] = [],
+                     toggles: [CardToggleConfig] = [], steppers: [CardStepperConfig] = [],
+                     onSelect: @escaping (Int?) -> Void) {
+        var rows: [Row] = []
+        if showsOffRow {
+            rows.append(Row(title: String(localized: "Off"), subtitle: nil, trackId: nil, isSelected: selectedTrackId == nil))
+        }
+        rows.append(contentsOf: tracks.map { track in
+            Row(
+                title: audio ? track.audioMenuTitle : track.subtitleMenuTitle,
+                subtitle: audio ? track.audioMenuSubtitle(among: tracks) : track.subtitleMenuSubtitle,
+                trackId: track.id,
+                isSelected: track.id == selectedTrackId
+            )
+        })
+        self.init(header: header, rows: rows, actions: actions, choices: choices, toggles: toggles,
+                  steppers: steppers, trackHeader: trackHeader, onSelect: onSelect)
+    }
+
+    /// AVKit's subtitles menu: On and Off, then Language (the tracks) and Style one level in.
+    /// `onTrackId` is what On turns on; nil leaves only Off.
+    static func subtitleMenu(tracks: [MediaTrack], selectedTrackId: Int?, onTrackId: Int?,
+                             actions: [CardActionConfig] = [], steppers: [CardStepperConfig] = [],
+                             onSelect: @escaping (Int?) -> Void) -> CardTrackListView {
+        var rows = [Row(title: String(localized: "Off"), subtitle: nil, trackId: nil, isSelected: selectedTrackId == nil)]
+        var languageRows: [Row] = []
+        if let onTrackId {
+            rows.insert(Row(title: String(localized: "On"), subtitle: nil, trackId: onTrackId, isSelected: selectedTrackId != nil), at: 0)
+            languageRows = tracks.map {
+                Row(title: $0.subtitleMenuTitle, subtitle: $0.subtitleMenuSubtitle, trackId: $0.id,
+                    isSelected: $0.id == selectedTrackId)
+            }
+        }
+        let value = tracks.first { $0.id == (selectedTrackId ?? onTrackId) }?.subtitleMenuTitle
+        return CardTrackListView(header: String(localized: "Subtitles"), rows: rows, actions: actions,
+                                 choices: [CardChoiceConfig.captionStyle()].compactMap { $0 },
+                                 steppers: steppers, languageRows: languageRows, languageValue: value,
+                                 onSelect: onSelect)
+    }
+
+    /// The audio menu in the TV app's order: Audio Adjustments, then Audio Track, then Delay.
+    /// `syncing` adds the A/V sync stepper; nil where the engine can't move audio.
+    static func audioMenu(tracks: [MediaTrack], selectedTrackId: Int?, syncing player: AetherPlayer? = nil,
+                          onSelect: @escaping (Int?) -> Void) -> CardTrackListView {
+        let choices = SystemAudioAdjustment.menuChoices
+        let toggles = SystemAudioAdjustment.menuToggles
+        let steppers = player.map { player in
+            [CardStepperConfig(title: "Delay",
+                               value: { AudioSync.formatted(AudioSync.offsetMs()) },
+                               onStep: { [weak player] step in
+                                   AudioSync.step(by: step)
+                                   player?.applyAudioSync()
+                               })]
+        } ?? []
+        let adjusts = !choices.isEmpty || !toggles.isEmpty
+        return CardTrackListView(header: adjusts ? String(localized: "Audio Adjustments") : String(localized: "Audio Track"), tracks: tracks,
+                                 selectedTrackId: selectedTrackId, showsOffRow: false, audio: true,
+                                 trackHeader: adjusts ? String(localized: "Audio Track") : nil,
+                                 choices: choices, toggles: toggles, steppers: steppers, onSelect: onSelect)
+    }
+
+    /// A plain list of choices: each row's `trackId` is what `onSelect` receives.
+    init(header: String, rows: [Row], actions: [CardActionConfig] = [], choices: [CardChoiceConfig] = [],
+         toggles: [CardToggleConfig] = [], steppers: [CardStepperConfig] = [],
+         trackHeader: String? = nil, languageRows: [Row] = [], languageValue: String? = nil,
+         onSelect: @escaping (Int?) -> Void) {
+        self.rows = rows
+        self.languageRows = languageRows
+        self.languageValue = languageValue
+        self.trackHeader = trackHeader
+        self.actions = actions
+        self.choices = choices
+        self.toggles = toggles
+        self.steppers = steppers
+        self.onSelect = onSelect
+        self.header = header
+        super.init(frame: .zero)
+        setupViews()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    private func setupViews() {
+        headerLabel.font = Metrics.secondaryFont
+        headerLabel.textColor = Metrics.secondaryColor
+        addSubview(headerLabel)
+
+        stack.axis = .vertical
+        scrollView.addSubview(stack)
+        scrollView.clipsToBounds = true
+        addSubview(scrollView)
+
+        [headerLabel, scrollView, stack].forEach {
+            $0.translatesAutoresizingMaskIntoConstraints = false
+        }
+
+        // The scroll view grows with content up to the popup's cap, so short
+        // lists hug their rows and long ones scroll. Kept below the header's
+        // compression resistance so an overflow scrolls instead of squashing it.
+        let scrollHeight = scrollView.heightAnchor.constraint(
+            equalTo: stack.heightAnchor, constant: Metrics.focusGrowth + Metrics.bottomInset)
+        scrollHeight.priority = .defaultHigh - 1
+
+        NSLayoutConstraint.activate([
+            headerLabel.centerYAnchor.constraint(equalTo: topAnchor, constant: Metrics.headerLabelCenterY),
+            headerLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Metrics.headerLabelLeading),
+            headerLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -Metrics.headerLabelLeading),
+
+            // Starts focusGrowth early, with the rows that far down its content, so the
+            // top row's focused pill isn't clipped by the scroll view.
+            scrollView.topAnchor.constraint(equalTo: topAnchor, constant: Metrics.headerHeight - Metrics.focusGrowth),
+            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            scrollHeight,
+
+            stack.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor, constant: Metrics.focusGrowth),
+            stack.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor, constant: Metrics.rowInset),
+            stack.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor, constant: -Metrics.rowInset),
+            stack.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor, constant: -Metrics.bottomInset),
+            stack.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor, constant: -2 * Metrics.rowInset),
+        ])
+        buildRows()
+    }
+
+    /// Change a track row in place (a download's progress, a pick that keeps the menu open).
+    func updateTrack(_ trackId: Int, subtitle: String) {
+        trackButtons.first { $0.row.trackId == trackId }?.setSubtitle(subtitle)
+    }
+
+    func checkTrack(_ trackId: Int?) {
+        trackButtons.forEach { $0.isChecked = $0.row.trackId == trackId }
+    }
+
+    private func buildRows() {
+        stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        rowButtons = []
+        trackButtons = []
+        stepperRows = []
+        hasPinnedInitialFocus = false
+        // The rows below are a different length; an offset left over from a long
+        // list would sit past the end of a short one and show nothing.
+        scrollView.contentOffset = .zero
+
+        if let index = openChoice {
+            buildSubmenu(choices[index])
+            return
+        }
+        if showsLanguages {
+            headerLabel.text = String(localized: "Language")
+            for row in languageRows { addTrackButton(row) }
+            return
+        }
+        headerLabel.text = header
+
+        // AVKit's subtitles menu: On, Off | Language, Style | actions | steppers.
+        if !languageRows.isEmpty {
+            buildTracks()
+            stack.addArrangedSubview(MenuSeparatorView())
+            let language = CardTrackRowButton(row: Row(title: String(localized: "Language"), subtitle: languageValue,
+                                                       trackId: nil, isSelected: false),
+                                              showsChevron: true)
+            language.onTap = { [weak self] in self?.showLanguages(true) }
+            stack.addArrangedSubview(language)
+            rowButtons.append(language)
+            languageButton = language
+            buildAdjustments(separated: false)
+            buildActions()
+            buildSteppers()
+            return
+        }
+
+        // The TV app's audio menu: adjustments first, then the tracks under their own header,
+        // then the steppers at the bottom as in the subtitles menu.
+        if let trackHeader {
+            buildAdjustments()
+            stack.addArrangedSubview(MenuSeparatorView())
+            stack.addArrangedSubview(MenuSectionHeaderView(title: trackHeader))
+            buildTracks()
+            buildSteppers()
+            return
+        }
+        buildTracks()
+        buildActions()
+        buildAdjustments()
+        buildSteppers()
+    }
+
+    /// Actions (Search for Subtitles) get their own section; the handler
+    /// decides what happens to the popup.
+    private func buildActions() {
+        if !actions.isEmpty, !rowButtons.isEmpty {
+            stack.addArrangedSubview(MenuSeparatorView())
+        }
+        for config in actions {
+            let button = CardTrackRowButton(row: Row(title: config.title, subtitle: nil, trackId: nil, isSelected: false))
+            button.onTap = { [weak button] in
+                guard let button else { return }
+                config.run(button)
+            }
+            stack.addArrangedSubview(button)
+            rowButtons.append(button)
+        }
+    }
+
+    /// Adjustment steppers (delay / height) sit in their own section below a
+    /// separator. Left and Right adjust in place and leave the popup up, so
+    /// the user can watch the subtitles move as they step.
+    private func buildSteppers() {
+        if !steppers.isEmpty, !rowButtons.isEmpty {
+            stack.addArrangedSubview(MenuSeparatorView())
+        }
+        for config in steppers {
+            let row = CardStepperRowView(config: config)
+            stack.addArrangedSubview(row)
+            stepperRows.append(row)
+        }
+    }
+
+    /// Choices (Enhance Dialogue levels) open their options in place, like AVKit's
+    /// submenu; toggles flip in place and leave the popup up, in one section with them.
+    private func buildAdjustments(separated: Bool = true) {
+        if separated, !choices.isEmpty, !rowButtons.isEmpty {
+            stack.addArrangedSubview(MenuSeparatorView())
+        }
+        for (index, config) in choices.enumerated() {
+            let button = CardTrackRowButton(row: Row(title: config.title,
+                                                     subtitle: config.options.indices.contains(config.selected())
+                                                         ? config.options[config.selected()] : nil,
+                                                     trackId: nil, isSelected: false),
+                                            showsChevron: true)
+            button.onTap = { [weak self] in self?.showChoice(index) }
+            stack.addArrangedSubview(button)
+            rowButtons.append(button)
+        }
+
+        if !toggles.isEmpty, !rowButtons.isEmpty, choices.isEmpty {
+            stack.addArrangedSubview(MenuSeparatorView())
+        }
+        for config in toggles {
+            let button = CardTrackRowButton(row: Row(title: config.title, subtitle: nil, trackId: nil,
+                                                     isSelected: config.isOn()))
+            button.onTap = { [weak button] in
+                guard let button else { return }
+                let on = !button.isChecked
+                config.onToggle(on)
+                button.isChecked = on
+            }
+            stack.addArrangedSubview(button)
+            rowButtons.append(button)
+        }
+    }
+
+    private func buildTracks() {
+        for row in rows { addTrackButton(row) }
+    }
+
+    /// A row that hands its `trackId` to `onSelect`. On and Off are not the tracks
+    /// `checkTrack` and `updateTrack` address once the tracks sit in Language.
+    private func addTrackButton(_ row: Row) {
+        let button = CardTrackRowButton(row: row)
+        button.onTap = { [weak self] in
+            self?.onSelect(row.trackId)
+        }
+        stack.addArrangedSubview(button)
+        rowButtons.append(button)
+        if languageRows.isEmpty || showsLanguages { trackButtons.append(button) }
+    }
+
+    private func showLanguages(_ show: Bool) {
+        showsLanguages = show
+        buildRows()
+        if !show { pendingFocus = languageButton }
+        setNeedsFocusUpdate()
+        updateFocusIfNeeded()
+    }
+
+    private func buildSubmenu(_ config: CardChoiceConfig) {
+        headerLabel.text = config.title
+        let selected = config.selected()
+        for (index, title) in config.options.enumerated() {
+            let button = CardTrackRowButton(row: Row(title: title, subtitle: nil, trackId: nil,
+                                                     isSelected: index == selected))
+            button.onTap = { [weak self] in
+                config.onSelect(index)
+                self?.showChoice(nil)
+            }
+            stack.addArrangedSubview(button)
+            rowButtons.append(button)
+        }
+    }
+
+    /// Swaps between the menu and a choice's options; focus lands on the
+    /// selected option going in and on the choice's row coming back.
+    private func showChoice(_ index: Int?) {
+        let returning = openChoice
+        openChoice = index
+        buildRows()
+        if index == nil, let returning {
+            pendingFocus = rowButtons.first { $0.showsChevron && $0.row.title == choices[returning].title }
+        }
+        setNeedsFocusUpdate()
+        updateFocusIfNeeded()
+    }
+
+    func handleMenuPress() -> Bool {
+        if showsLanguages {
+            showLanguages(false)
+            return true
+        }
+        guard openChoice != nil else { return false }
+        showChoice(nil)
+        return true
+    }
+
+    override var preferredFocusEnvironments: [UIFocusEnvironment] {
+        if let pendingFocus {
+            self.pendingFocus = nil
+            return [pendingFocus]
+        }
+        // After the first landing, hold the CURRENT row: when an edge press
+        // finds no in-popup candidate the popup's fence re-resolves through
+        // here, and returning the focused row makes focus stop at the edge
+        // instead of looping to the top.
+        if hasPinnedInitialFocus {
+            return lastFocusedControl.map { [$0] } ?? []
+        }
+        if let first = trackButtons.first(where: { $0.row.isSelected })
+            ?? rowButtons.first(where: { $0.row.isSelected }) {
+            return [first]
+        }
+        if let firstRow = rowButtons.first { return [firstRow] }
+        return stepperRows.isEmpty ? [self] : [stepperRows[0]]
+    }
+
+    override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+        super.didUpdateFocus(in: context, with: coordinator)
+        guard let next = context.nextFocusedView, next.isDescendant(of: self) else { return }
+        if let row = rowButtons.first(where: { next.isDescendant(of: $0) || next === $0 }) {
+            hasPinnedInitialFocus = true
+            lastFocusedControl = row
+        } else if let row = stepperRows.first(where: { $0 === next }) {
+            hasPinnedInitialFocus = true
+            lastFocusedControl = row
+        }
+    }
+}
+
+// MARK: - MenuSeparatorView
+
+/// A section break: a 1pt line inset 15pt from the rows, centred in its 18pt gap.
+private final class MenuSeparatorView: UIView {
+    init() {
+        super.init(frame: .zero)
+        let line = UIView()
+        line.backgroundColor = CardTrackListView.Metrics.separatorColor
+        addSubview(line)
+        line.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: CardTrackListView.Metrics.separatorGap + 1),
+            line.heightAnchor.constraint(equalToConstant: 1),
+            line.centerYAnchor.constraint(equalTo: centerYAnchor),
+            line.leadingAnchor.constraint(equalTo: leadingAnchor, constant: CardTrackListView.Metrics.separatorInset),
+            line.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -CardTrackListView.Metrics.separatorInset),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+}
+
+/// A section title inside a menu, set like the menu's own header (the TV app's "Audio Track").
+private final class MenuSectionHeaderView: UIView {
+    init(title: String) {
+        super.init(frame: .zero)
+        let label = UILabel()
+        label.text = title
+        label.font = CardTrackListView.Metrics.secondaryFont
+        label.textColor = CardTrackListView.Metrics.secondaryColor
+        addSubview(label)
+        label.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: CardTrackListView.Metrics.headerHeight),
+            label.centerYAnchor.constraint(equalTo: topAnchor, constant: CardTrackListView.Metrics.headerLabelCenterY),
+            label.leadingAnchor.constraint(equalTo: leadingAnchor,
+                                           constant: CardTrackListView.Metrics.headerLabelLeading - CardTrackListView.Metrics.rowInset),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+}
+
+// MARK: - MenuRowPill
+
+/// The white pill a focused menu row rises on: AVKit's 4pt growth and shadow.
+/// Shared by the track rows and the stepper rows so every row focuses alike.
+private final class MenuRowPill: UIView {
+    init() {
+        super.init(frame: .zero)
+        layer.cornerRadius = CardTrackListView.Metrics.rowRadius
+        layer.cornerCurve = .continuous
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOffset = CGSize(width: 0, height: 20)
+        layer.shadowRadius = 15
+        isUserInteractionEnabled = false
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    /// Sits on `rowBounds`, grown past it while focused; the shadow follows.
+    func layout(in rowBounds: CGRect, focused: Bool) {
+        let growth = focused ? CardTrackListView.Metrics.focusGrowth : 0
+        frame = rowBounds.insetBy(dx: -growth, dy: -growth)
+        layer.shadowPath = UIBezierPath(roundedRect: bounds, cornerRadius: layer.cornerRadius).cgPath
+    }
+
+    /// Raises the pill (white, shadowed) or clears it.
+    func apply(focused: Bool, in rowBounds: CGRect) {
+        let growth = focused ? CardTrackListView.Metrics.focusGrowth : 0
+        layer.cornerRadius = CardTrackListView.Metrics.rowRadius + growth
+        layout(in: rowBounds, focused: focused)
+        backgroundColor = focused ? .white : .clear
+        layer.shadowOpacity = focused ? 0.3 : 0
+    }
+}
+
+// MARK: - CardChoiceConfig
+
+/// A one-of-N submenu: `selected` and `onSelect` use option indices.
+struct CardChoiceConfig {
+    let title: String
+    let options: [String]
+    let selected: () -> Int
+    let onSelect: (Int) -> Void
+}
+
+extension CardChoiceConfig {
+    /// AVKit's Style row: the system caption styles, applied system-wide as Settings does.
+    static func captionStyle() -> CardChoiceConfig? {
+        let styles = CaptionAppearance.styles()
+        guard styles.count > 1 else { return nil }
+        return CardChoiceConfig(
+            title: String(localized: "Style"),
+            options: styles.map(\.name),
+            selected: { styles.firstIndex { $0.id == CaptionAppearance.activeStyleID } ?? -1 },
+            onSelect: { CaptionAppearance.activeStyleID = styles[$0].id })
+    }
+}
+
+// MARK: - CardActionConfig
+
+/// A row that runs `run`, which receives the row so it can retitle it.
+struct CardActionConfig {
+    let title: String
+    let run: (CardTrackRowButton) -> Void
+}
+
+// MARK: - CardToggleConfig
+
+struct CardToggleConfig {
+    let title: String
+    let isOn: () -> Bool
+    let onToggle: (Bool) -> Void
+}
+
+// MARK: - CardStepperConfig
+
+/// One adjustment stepper in the menu: a title, a formatted value provider,
+/// and a step handler (`-1` / `+1`). The row re-reads `value()` after every
+/// step, so the handler owns clamping and persistence.
+struct CardStepperConfig {
+    let title: String
+    let value: () -> String
+    let onStep: (Int) -> Void
+
+    init(title: String.LocalizationValue, value: @escaping () -> String, onStep: @escaping (Int) -> Void) {
+        self.title = String(localized: title)
+        self.value = value
+        self.onStep = onStep
+    }
+}
+
+// MARK: - CardStepperRowView
+
+/// `Title            < value >` in a menu row. The row is the focus stop, and
+/// Left and Right step the value in place: an arrow press from any remote, or
+/// a touch swipe for the remotes that send no arrow presses. A held arrow
+/// keeps stepping (`PressRepeater`). The -/+ buttons this replaced cost two
+/// focus moves per adjustment and made every step a Select.
+final class CardStepperRowView: UIControl {
+
+    /// A held arrow's pace. One subtitle-delay step (0.1 s) every 0.1 s, so a
+    /// second held moves the delay a second.
+    static let repeatInterval: TimeInterval = 0.1
+
+    private let config: CardStepperConfig
+    private let pill = MenuRowPill()
+    private let content = UIView()
+    private let titleLabel = UILabel()
+    private let valueLabel = UILabel()
+    private let leftChevron = CardStepperRowView.chevron("chevron.backward")
+    private let rightChevron = CardStepperRowView.chevron("chevron.forward")
+    private let repeater = PressRepeater()
+    private var swipeBinding: DirectionalInputBinding?
+
+    init(config: CardStepperConfig) {
+        self.config = config
+        super.init(frame: .zero)
+        typealias M = CardTrackListView.Metrics
+
+        titleLabel.text = config.title
+        titleLabel.font = M.titleFont
+
+        valueLabel.text = config.value()
+        valueLabel.font = .monospacedDigitSystemFont(ofSize: 23, weight: .medium)
+        valueLabel.textAlignment = .center
+
+        content.isUserInteractionEnabled = false
+        addSubview(pill)
+        addSubview(content)
+        content.translatesAutoresizingMaskIntoConstraints = false
+        [titleLabel, leftChevron, valueLabel, rightChevron].forEach {
+            content.addSubview($0)
+            $0.translatesAutoresizingMaskIntoConstraints = false
+        }
+
+        let chevronGap: CGFloat = 10
+        NSLayoutConstraint.activate([
+            heightAnchor.constraint(equalToConstant: M.rowHeight),
+            content.topAnchor.constraint(equalTo: topAnchor),
+            content.bottomAnchor.constraint(equalTo: bottomAnchor),
+            content.leadingAnchor.constraint(equalTo: leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: trailingAnchor),
+
+            titleLabel.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: M.titleX),
+            titleLabel.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+
+            // The trailing chevron sits in the Language row's chevron column.
+            rightChevron.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -M.checkColumnX),
+            rightChevron.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+
+            valueLabel.trailingAnchor.constraint(equalTo: rightChevron.leadingAnchor, constant: -chevronGap),
+            valueLabel.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+            valueLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 70),
+
+            leftChevron.trailingAnchor.constraint(equalTo: valueLabel.leadingAnchor, constant: -chevronGap),
+            leftChevron.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+            leftChevron.leadingAnchor.constraint(greaterThanOrEqualTo: titleLabel.trailingAnchor, constant: 12),
+        ])
+        applyFocus(false)
+
+        // The press's touch twin. Not while the clickpad is down: an edge click
+        // (the press above) jolts the touch into a fake swipe.
+        swipeBinding = DirectionalInputBinding(
+            gatedSwipesOn: self, directions: [.left, .right],
+            shouldHandle: { [weak self] _ in self?.isFocused == true && !RemoteInputHandler.isClickpadDown },
+            onSwipe: { [weak self] direction in self?.step(direction == .right ? 1 : -1) })
+
+        // VoiceOver: one adjustable element, swiped up and down to step.
+        accessibilityTraits = .adjustable
+        accessibilityLabel = config.title
+        accessibilityValue = valueLabel.text
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    private static func chevron(_ symbolName: String) -> UIImageView {
+        let view = UIImageView(image: UIImage(
+            systemName: symbolName,
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 20, weight: .bold)))
+        view.contentMode = .center
+        return view
+    }
+
+    private func step(_ direction: Int) {
+        config.onStep(direction)
+        valueLabel.text = config.value()
+        accessibilityValue = valueLabel.text
+    }
+
+    override func accessibilityIncrement() { step(1) }
+    override func accessibilityDecrement() { step(-1) }
+
+    // MARK: Focus
+
+    override var canBecomeFocused: Bool { true }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        pill.layout(in: bounds, focused: isFocused)
+    }
+
+    override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+        super.didUpdateFocus(in: context, with: coordinator)
+        let focused = context.nextFocusedView === self
+        if !focused { repeater.end() }
+        coordinator.animateFocusChange(gained: focused) {
+            self.applyFocus(focused)
+        }
+    }
+
+    private func applyFocus(_ focused: Bool) {
+        typealias M = CardTrackListView.Metrics
+        pill.apply(focused: focused, in: bounds)
+        content.transform = focused ? CGAffineTransform(scaleX: M.focusScale, y: M.focusScale) : .identity
+        titleLabel.textColor = focused ? .black : .white
+        let secondary = focused ? UIColor.black.withAlphaComponent(0.6) : M.secondaryColor
+        valueLabel.textColor = secondary
+        leftChevron.tintColor = secondary
+        rightChevron.tintColor = secondary
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil { repeater.end() }
+    }
+
+    // MARK: Presses
+    //
+    // Left and Right never move focus out of a menu row (the panel fences focus
+    // and the row spans it), so the engine declines them and they land here.
+    // Both phases are consumed: an Ended that bubbles without its Began gets the
+    // system's default handling.
+
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        guard let direction = Self.stepDirection(of: presses) else {
+            super.pressesBegan(presses, with: event)
+            return
+        }
+        repeater.begin(interval: Self.repeatInterval) { [weak self] in self?.step(direction) }
+    }
+
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        guard Self.stepDirection(of: presses) != nil else {
+            super.pressesEnded(presses, with: event)
+            return
+        }
+        repeater.end()
+    }
+
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        guard Self.stepDirection(of: presses) != nil else {
+            super.pressesCancelled(presses, with: event)
+            return
+        }
+        repeater.end()
+    }
+
+    /// -1 for a Left arrow, +1 for Right, nil when `presses` holds neither.
+    private static func stepDirection(of presses: Set<UIPress>) -> Int? {
+        for press in presses {
+            switch press.type {
+            case .leftArrow: return -1
+            case .rightArrow: return 1
+            default: continue
+            }
+        }
+        return nil
+    }
+}
+
+// MARK: - CardTrackRowButton
+
+/// One menu row: checkmark column, title, optional second line. Focused, a
+/// white pill grows 4pt past the row with AVKit's shadow and the content scales
+/// with it.
+final class CardTrackRowButton: UIControl {
+
+    let row: CardTrackListView.Row
+    let showsChevron: Bool
+    var onTap: (() -> Void)?
+    var isChecked: Bool {
+        get { !checkmarkView.isHidden }
+        set { checkmarkView.isHidden = !newValue }
+    }
+    private let pill = MenuRowPill()
+    private let content = UIView()
+    private let titleLabel = UILabel()
+    private let subtitleLabel = UILabel()
+    private let checkmarkView = UIImageView(image: UIImage(
+        systemName: "checkmark",
+        // Matches AVKit's glyph by rendered ink, not by its reported 19x17 size.
+        withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .bold)
+    ))
+
+    private let chevronView = UIImageView(image: UIImage(
+        systemName: "chevron.forward",
+        withConfiguration: UIImage.SymbolConfiguration(pointSize: 22, weight: .bold)
+    ))
+
+    init(row: CardTrackListView.Row, showsChevron: Bool = false) {
+        self.row = row
+        self.showsChevron = showsChevron
+        super.init(frame: .zero)
+        typealias M = CardTrackListView.Metrics
+
+        let hasSubtitle = !(row.subtitle?.isEmpty ?? true)
+
+        content.isUserInteractionEnabled = false
+
+        titleLabel.text = row.title
+        titleLabel.font = M.titleFont
+        titleLabel.textColor = .white
+
+        subtitleLabel.text = row.subtitle
+        subtitleLabel.font = M.secondaryFont
+        subtitleLabel.textColor = M.secondaryColor
+        subtitleLabel.isHidden = !hasSubtitle
+
+        checkmarkView.tintColor = .white
+        checkmarkView.isHidden = !row.isSelected
+        checkmarkView.contentMode = .center
+
+        addSubview(pill)
+        addSubview(content)
+        [checkmarkView, titleLabel, subtitleLabel].forEach { content.addSubview($0) }
+        chevronView.isHidden = !showsChevron
+        chevronView.tintColor = M.secondaryColor
+        content.addSubview(chevronView)
+        chevronView.translatesAutoresizingMaskIntoConstraints = false
+
+        [content, checkmarkView, titleLabel, subtitleLabel].forEach { $0.translatesAutoresizingMaskIntoConstraints = false }
+        var constraints = [
+            heightAnchor.constraint(equalToConstant: hasSubtitle ? M.twoLineRowHeight : M.rowHeight),
+            content.topAnchor.constraint(equalTo: topAnchor),
+            content.bottomAnchor.constraint(equalTo: bottomAnchor),
+            content.leadingAnchor.constraint(equalTo: leadingAnchor),
+            content.trailingAnchor.constraint(equalTo: trailingAnchor),
+
+            checkmarkView.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: M.checkColumnX),
+            checkmarkView.widthAnchor.constraint(equalToConstant: M.checkColumnWidth),
+            checkmarkView.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+
+            titleLabel.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: M.titleX),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -M.checkColumnX),
+            subtitleLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            subtitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: content.trailingAnchor, constant: -M.checkColumnX),
+            chevronView.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -M.checkColumnX),
+            chevronView.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+        ]
+        if hasSubtitle {
+            constraints += [
+                titleLabel.topAnchor.constraint(equalTo: content.topAnchor, constant: 13),
+                subtitleLabel.topAnchor.constraint(equalTo: content.topAnchor, constant: 45),
+            ]
+        } else {
+            constraints.append(titleLabel.centerYAnchor.constraint(equalTo: content.centerYAnchor))
+        }
+        NSLayoutConstraint.activate(constraints)
+        applyFocus(false)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func setTitle(_ title: String) { titleLabel.text = title }
+    func setSubtitle(_ subtitle: String) { subtitleLabel.text = subtitle }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        pill.layout(in: bounds, focused: isFocused)
+    }
+
+    override var canBecomeFocused: Bool { true }
+
+    // Select does not fire .primaryActionTriggered on a plain UIControl
+    // on tvOS; handle the press directly.
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        for press in presses where press.type == .select {
+            onTap?()
+            return
+        }
+        super.pressesBegan(presses, with: event)
+    }
+
+    override func didUpdateFocus(in context: UIFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+        super.didUpdateFocus(in: context, with: coordinator)
+        let isFocused = context.nextFocusedView === self
+        coordinator.animateFocusChange(gained: isFocused) {
+            self.applyFocus(isFocused)
+        }
+    }
+
+    private func applyFocus(_ focused: Bool) {
+        typealias M = CardTrackListView.Metrics
+        pill.apply(focused: focused, in: bounds)
+        content.transform = focused ? CGAffineTransform(scaleX: M.focusScale, y: M.focusScale) : .identity
+        titleLabel.textColor = focused ? .black : .white
+        subtitleLabel.textColor = focused ? UIColor.black.withAlphaComponent(0.6) : M.secondaryColor
+        // A marquee label can only clip, so a long line scrolls while focused and ends in an ellipsis at rest.
+        subtitleLabel.enablesMarqueeWhenAncestorFocused = focused
+        if !focused { subtitleLabel.lineBreakMode = .byTruncatingTail }
+        checkmarkView.tintColor = focused ? .black : .white
+        chevronView.tintColor = focused ? UIColor.black.withAlphaComponent(0.6) : M.secondaryColor
+    }
+}

@@ -3,7 +3,7 @@
 
 //
 //  TopShelfItem.swift
-//  Rivulet
+//  DreamCAST
 //
 //  Lightweight model for Top Shelf extension data sharing.
 //  DUPLICATED verbatim in TopShelfExtension/TopShelfItem.swift — keep identical.

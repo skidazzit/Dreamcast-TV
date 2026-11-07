@@ -1,6 +1,6 @@
-# Rivulet - Claude Context
+# DreamCAST - Claude Context
 
-Rivulet is a tvOS and iOS media client for Plex, Jellyfin, Emby and IPTV. The primary surfaces (Home, Library, Search, Discover, Media Detail, the preview carousel, Person detail, Music, and the player chrome) are **UIKit**, as is Settings; SwiftUI remains for thin navigation shells and Live TV slots.
+DreamCAST is a tvOS and iOS media client for Plex, Jellyfin, Emby and IPTV. The primary surfaces (Home, Library, Search, Discover, Media Detail, the preview carousel, Person detail, Music, and the player chrome) are **UIKit**, as is Settings; SwiftUI remains for thin navigation shells and Live TV slots.
 
 **UIKit is the default. Do not add SwiftUI to a primary surface.** When you find SwiftUI in one, assume it is a leftover and check reachability before building on it.
 
@@ -25,7 +25,7 @@ SwiftUI had cost three hacks UIKit does not need:
 `Services/**` is invisible to it. Judge by the surface the code renders on, not by
 whether the linter fired.
 
-**Detail is UIKit, with no SwiftUI fallback.** Every route lands on the same two surfaces: `MediaItemDetailPageViewController` for episodes, `PreviewCarouselViewController(standaloneDetail:)` for everything else. That holds for in-app taps, tile-menu "More Info" / "Go to …", hero Info, and `rivulet://detail` deep links from Top Shelf / Siri (`TVSidebarView.presentDetailForDeepLink`). The old SwiftUI `MediaDetailView` + `MediaItemContextMenu` + `SummarySheet` are **deleted** (`c0b0bf7`); if you find a comment referencing them, it is stale.
+**Detail is UIKit, with no SwiftUI fallback.** Every route lands on the same two surfaces: `MediaItemDetailPageViewController` for episodes, `PreviewCarouselViewController(standaloneDetail:)` for everything else. That holds for in-app taps, tile-menu "More Info" / "Go to …", hero Info, and `dreamcast://detail` deep links from Top Shelf / Siri (`TVSidebarView.presentDetailForDeepLink`). The old SwiftUI `MediaDetailView` + `MediaItemContextMenu` + `SummarySheet` are **deleted** (`c0b0bf7`); if you find a comment referencing them, it is stale.
 
 The video player is **AetherPlayer** — an adapter around AetherEngine (FFmpeg demux + HLS-fMP4 remux + AVPlayer, with HDR10+ / HLG / EAC3+JOC Atmos, plus a software sample-buffer backend for AV1 / VP9 / MPEG-2 / VC-1 / MPEG-4p2). It is the only player: VOD **and** Live TV. Video MUST render through the engine surface (`AetherVideoSurfaceView` → `engine.bind(view:)`), never an AVPlayerLayer on `currentAVPlayer`. The only other path is `hls`: AVPlayer on a Plex server transcode, used when no direct-play URL exists or as the fallback after an Aether startup failure. `ContentRouter.plan(...)` picks aether vs hls per item. (RPlayer and the localRemux/avPlayerDirect routes have been removed — see git history.)
 
@@ -35,15 +35,15 @@ The video player is **AetherPlayer** — an adapter around AetherEngine (FFmpeg 
 - **Language**: Swift 6
 - **UI Framework**: UIKit for the primary surfaces (see above); SwiftUI for the rest
 - **Video Player**: AetherPlayer for VOD and Live TV; AVPlayer only for the `hls` route (server transcode, primary-when-no-direct-URL or Aether fallback). See `Docs/RIVULET_PLAYER.md`.
-- **AetherEngine**: consumed as an **upstream** SwiftPM dependency (`superuser404notfound/AetherEngine`), pinned `exactVersion` (7.57.0), with none of its optional package traits enabled. **There is no fork** — engine fixes need an upstream release or a host-side workaround; do not propose editing engine sources. Bumping it has a procedure: use the `aether-update` skill. Every bump gets a changelog line. FFmpeg + libdovi arrive **only transitively through Aether**; there is no app-level FFmpeg layer and no direct FFmpegBuild dependency. Since FFmpegBuild 2.0.0 the FFmpeg libs ship as **embedded dynamic frameworks** in `Rivulet.app/Frameworks/` — their `MinimumOSVersion` (26.0) must stay >= `TVOS_DEPLOYMENT_TARGET` (26.0), so do not raise the deployment target.
+- **AetherEngine**: consumed as an **upstream** SwiftPM dependency (`superuser404notfound/AetherEngine`), pinned `exactVersion` (7.57.0), with none of its optional package traits enabled. **There is no fork** — engine fixes need an upstream release or a host-side workaround; do not propose editing engine sources. Bumping it has a procedure: use the `aether-update` skill. Every bump gets a changelog line. FFmpeg + libdovi arrive **only transitively through Aether**; there is no app-level FFmpeg layer and no direct FFmpegBuild dependency. Since FFmpegBuild 2.0.0 the FFmpeg libs ship as **embedded dynamic frameworks** in `DreamCAST.app/Frameworks/` — their `MinimumOSVersion` (26.0) must stay >= `TVOS_DEPLOYMENT_TARGET` (26.0), so do not raise the deployment target.
 - **Design Guide**: See `Docs/DESIGN_GUIDE.md` for UI/UX patterns
 - **Repo is public**: keep commit messages short and plain; no internal detail.
 
 ## Project Structure
 
-Five code roots. `RivuletCore/` is a buildable folder compiled into BOTH app
-targets (not a module: `internal` spans each target); `Rivulet/` is the tvOS
-app, `RivuletiOS/` the iOS app, `TopShelfExtension/` the tvOS Top Shelf, and
+Five code roots. `DreamCASTCore/` is a buildable folder compiled into BOTH app
+targets (not a module: `internal` spans each target); `DreamCAST/` is the tvOS
+app, `DreamCASTiOS/` the iOS app, `TopShelfExtension/` the tvOS Top Shelf, and
 `AssetPackExtension/` the tvOS Background Assets downloader that fetches the
 speech model as an Apple-hosted asset pack (`SpeechModelStore`; Debug builds,
 which can't reach Apple hosting, fall back to Hugging Face into Caches; repack
@@ -51,7 +51,7 @@ with `Scripts/speech-model-pack.json`). See "Platform Boundary" below for what
 goes where.
 
 ```
-RivuletCore/            # Shared tvOS + iOS. The ONE Plex client (PlexNetworkManager,
+DreamCASTCore/            # Shared tvOS + iOS. The ONE Plex client (PlexNetworkManager,
 │                       #   PlexAuthManager, PlexUserProfileManager), Models/Plex,
 │                       #   TMDB, WatchProgressPolicy, IPTV parsers,
 │                       #   Security (attest, keychain), Sentry startup, Secrets,
@@ -68,25 +68,25 @@ RivuletCore/            # Shared tvOS + iOS. The ONE Plex client (PlexNetworkMan
 │                       #   Home/ (Home row visibility and order, playlist pins,
 │                       #   hero sources, favorites and playlist rows).
 │                       #   NO #if os(...), lint-enforced.
-RivuletiOS/             # iOS/iPadOS app (SwiftUI). Shell/ (tabs, Account sheet,
+DreamCASTiOS/             # iOS/iPadOS app (SwiftUI). Shell/ (tabs, Account sheet,
 │                       #   navigation contract, IOSBrowseStore: every server's
 │                       #   content), Plex/ (IOSPlexSession: Plex sign-in and
 │                       #   playback; Home/Library/Detail views; no endpoint code), Search/, Settings/, LiveTV/ (views
 │                       #   over the shared LiveTVDataStore), Player/ (iOS
 │                       #   AetherPlayer, IOSPlaybackController: PiP, Now Playing),
 │                       #   Downloads/ (background transfer, download center, list;
-│                       #   records + offline progress live in RivuletCore/Downloads).
-Rivulet/                # The tvOS app — everything below.
+│                       #   records + offline progress live in DreamCASTCore/Downloads).
+DreamCAST/                # The tvOS app — everything below.
 ├── Models/
-│   ├── Shared/         # RivuletLink (the one rivulet:// definition) and TopShelfItem,
+│   ├── Shared/         # DreamCASTLink (the one dreamcast:// definition) and TopShelfItem,
 │   │                   #   both also compiled into the Top Shelf extension
 │   └── SwiftData/      # Persistent models (Channel, EPGProgram, PlexServer)
 ├── Services/
-│   ├── DeepLinkHandler.swift  # Opens a RivuletLink or Siri activity once the shell is ready
+│   ├── DeepLinkHandler.swift  # Opens a DreamCASTLink or Siri activity once the shell is ready
 │   ├── MediaProvider/  # tvOS stores over the seam: ServerDataStore (other servers' Home
-│   │                   #   rows), PlaylistAvailability (sidebar). The seam is in RivuletCore.
+│   │                   #   rows), PlaylistAvailability (sidebar). The seam is in DreamCASTCore.
 │   ├── Plex/
-│   │   ├── (PlexDataStore, …; the Plex client lives in RivuletCore/Plex)
+│   │   ├── (PlexDataStore, …; the Plex client lives in DreamCASTCore/Plex)
 │   │   └── Playback/   # AetherPlayer + routing/remux (see Docs/RIVULET_PLAYER.md),
 │   │       │           #   HLSTrustRelay (loopback relay for the hls route)
 │   │       ├── Pipeline/     # ContentRouter (routing decisions)
@@ -94,7 +94,7 @@ Rivulet/                # The tvOS app — everything below.
 │   │       │                  #   SubtitleImageReader (reads image subtitles on device)
 │   │       └── Subtitles/    # LibassRenderer + ASSCompositor (the libass layer), SubtitleCue,
 │   │                          #   VTT/SRT/ASS parsers (content-filter only; captions are not app-parsed)
-│   ├── LiveTV/         # LiveTVSessionHandoff (store + providers live in RivuletCore/LiveTV)
+│   ├── LiveTV/         # LiveTVSessionHandoff (store + providers live in DreamCASTCore/LiveTV)
 │   ├── Insights/       # InsightsTriviaClient, InsightsShowIDResolver (in-player cast/trivia panel)
 │   ├── Cache/          # CacheManager, ImageCacheManager, TopShelfComposer,
 │   │                   #   TopShelfImageCompositor (Top Shelf artwork and logo placement)
@@ -154,8 +154,8 @@ Standing exceptions:
 
 ## Platform Boundary (tvOS / iOS)
 
-Three buildable folders, three memberships. `Rivulet/` is the tvOS app.
-`RivuletiOS/` is the iOS/iPadOS app. `RivuletCore/` is compiled into both. All
+Three buildable folders, three memberships. `DreamCAST/` is the tvOS app.
+`DreamCASTiOS/` is the iOS/iPadOS app. `DreamCASTCore/` is compiled into both. All
 three are `PBXFileSystemSynchronizedRootGroup`s, so a file joins its targets by
 where it sits on disk and never needs a project edit. Do not add shared code by
 hand-listing `PBXBuildFile` entries in the iOS target: that list has to be
@@ -164,9 +164,9 @@ maintained inside `project.pbxproj`, which is the worst merge surface in the rep
 **Shared code contains no `#if os(...)`.** That single rule is the boundary, and
 it is the only thing keeping the iOS app from taxing tvOS work. It is
 lint-enforced: `platform_conditional_in_shared_code` in `.swiftlint.yml` errors
-on any platform directive under `RivuletCore/`. When a shared
+on any platform directive under `DreamCASTCore/`. When a shared
 file needs a platform branch, the file is in the wrong place: lift the
-platform-specific part out into `Rivulet/` or `RivuletiOS/`. Do not add the
+platform-specific part out into `DreamCAST/` or `DreamCASTiOS/`. Do not add the
 ifdef. PR 284 arrived with both failure modes and they are the worked examples:
 an `#if os(tvOS)` around `M3UParser.toUnifiedChannel` (the fix is to move that
 extension next to `UnifiedChannel`, after which the parser needs no conditional
@@ -178,21 +178,21 @@ classes in one 1799-line file (the fix is two files).
 The test is **"must a bug found on one platform be fixed on both?"**, not "does
 it compile everywhere."
 
-Yes, so it belongs in `RivuletCore/`: anything encoding how Plex or IPTV
+Yes, so it belongs in `DreamCASTCore/`: anything encoding how Plex or IPTV
 actually behaves. `PlexNetworkManager` (`includeGuids=1`, the three Discover
 hosts, account-vs-server token, `includeHttps=1&includeRelay=1`, the transcode
 profile params), `Models/Plex/`, `PlexLiveTVProvider` + `PlexLiveTVModels` + the
 timeline keepalive, `WatchProgressPolicy`, `ContentRouter`, `TrackIntent`,
 `MediaTrack`, `StreamBodyClassifier`, the IPTV parsers, `Services/Security/`,
-`RivuletCore/MediaProvider/`, `CacheManager`, `LibraryGUIDIndex`, `PlexAuthManager`,
+`DreamCASTCore/MediaProvider/`, `CacheManager`, `LibraryGUIDIndex`, `PlexAuthManager`,
 `LiveTVDataStore`.
 
-No, so it stays in `Rivulet/`: all of `Views/` (focus engine, morphs, Siri
+No, so it stays in `DreamCAST/`: all of `Views/` (focus engine, morphs, Siri
 Remote), `Services/Input/`, `Services/Focus/`, the Top Shelf composer and
 extension, `Services/Siri/`, `DisplayCriteriaManager` (`AVDisplayManager` is
 tvOS-only), and `PlexDataStore` — it carries tvOS-home-shaped state (the
 `mergedItems` cache, the Continue Watching merge), so iOS goes through
-`RivuletCore/MediaProvider/` instead.
+`DreamCASTCore/MediaProvider/` instead.
 
 **An import of UIKit or SwiftUI does not make a file tvOS-only.** Both exist on
 iOS, and `ObservableObject` / `@Published` are the only reason most of the
@@ -201,13 +201,13 @@ exactly four files touch genuinely tvOS-only API: the three in `Services/Input/`
 plus `DisplayCriteriaManager`. Judge by tvOS-only frameworks (`TVServices`,
 `TVUIKit`, `AVDisplayManager`) and focus/press API, nothing else.
 
-Move existing files into `RivuletCore/` when a slice actually needs them, not
+Move existing files into `DreamCASTCore/` when a slice actually needs them, not
 speculatively. The list above is the destination, not a migration order.
 
-**The app folders hold GUI; logic lives in `RivuletCore/`, even when only one
-app ships it.** `Rivulet/` and `RivuletiOS/` are for views, input, focus, and
+**The app folders hold GUI; logic lives in `DreamCASTCore/`, even when only one
+app ships it.** `DreamCAST/` and `DreamCASTiOS/` are for views, input, focus, and
 stores shaped for one app's screens. Server and API behavior, rules, mapping and
-non-UI state go in `RivuletCore/` from the first commit, built on the shared
+non-UI state go in `DreamCASTCore/` from the first commit, built on the shared
 types (`MediaItem`, `MediaProvider`) or generic over the item type. #87 is the worked example of getting
 this wrong: multi-server discovery and the Continue Watching merge landed in
 the tvOS folder and had to be lifted before iOS could use them.
@@ -218,10 +218,10 @@ The Plex stack is already across: `PlexNetworkManager`, `PlexAuthManager`,
 So is the Live TV stack: `LiveTVDataStore`, `PlexLiveTVProvider` + the timeline
 keepalive, `IPTVProvider`, `DispatcharrService`, `LiveTVSourceConnector` (the
 verify-then-add behind both apps' add-source forms) and `LiveShelves` (What's On
-rows). **There is exactly one Plex client.** `RivuletiOS/Plex/` holds
+rows). **There is exactly one Plex client.** `DreamCASTiOS/Plex/` holds
 `IOSPlexSession` (Plex sign-in, profile, server choice and the Plex playback
 path) and the SwiftUI views; iOS content for every server comes from
-`RivuletiOS/Shell/IOSBrowseStore` over `MediaProviderRegistry` and the shared
+`DreamCASTiOS/Shell/IOSBrowseStore` over `MediaProviderRegistry` and the shared
 `HomeFeed`. No endpoint code in the iOS folder. Never add a second decoder for a Plex
 endpoint to the iOS folder; a bug fixed in the shared client must be the fix
 for both apps.
@@ -233,7 +233,7 @@ difference at launch — the shared file stays free of `#if os(...)` and of
 references to per-platform types:
 
 - `PlexAPI.platform` / `PlexAPI.deviceName` are `static var`s defaulting to
-  the tvOS values; `RivuletiOSApp.init` overrides them before any request is
+  the tvOS values; `DreamCASTiOSApp.init` overrides them before any request is
   built. Not `UIDevice.systemName`, which splits iPads across "iOS"/"iPadOS".
 - `PlexAuthManager.onAuthenticated` / `.onSignedOut` and
   `PlexUserProfileManager.onProfileChanged` / `.onInitialProfileSelected` are
@@ -244,9 +244,9 @@ references to per-platform types:
 - `SentryStartup.start(platform:)` takes the platform from the caller for the
   same reason.
 
-RivuletCore is compiled into each app target, not built as a module, so
+DreamCASTCore is compiled into each app target, not built as a module, so
 `internal` visibility spans the whole target and no `public` is needed. That
-also means an extension on a shared type inside `RivuletiOS/` is not a
+also means an extension on a shared type inside `DreamCASTiOS/` is not a
 retroactive conformance.
 
 ### Mac (Designed for iPad)
@@ -255,7 +255,7 @@ The iOS app runs on Apple silicon Macs as **Designed for iPad**, not Mac Catalys
 the FFmpeg, LibDovi and LibTrueHD xcframeworks under AetherEngine ship no
 `maccatalyst` slice and the engine is upstream-only, so Catalyst cannot link
 (`SUPPORTS_MACCATALYST = NO`). The Mac runs the iphoneos binary; the only
-runtime signal is `ProcessInfo.isiOSAppOnMac`, read in `RivuletiOSApp.init` to
+runtime signal is `ProcessInfo.isiOSAppOnMac`, read in `DreamCASTiOSApp.init` to
 inject `PlexAPI.platform`/`deviceName` and Sentry's `macOS` platform. Build with
 `-destination 'platform=macOS,arch=arm64,name=My Mac'` (the `variant=` form
 can't take Xcode 27's comma); a local build only launches in the App Store
@@ -266,10 +266,10 @@ wrapper layout, so `generic/platform=iOS` is the usual compile check.
 `AetherPlayer` is three pieces in two homes. The engine mapping (state and track
 translation, cue conversion, background→foreground reload, mute persistence
 across Aether's internal player swaps) is platform-neutral and belongs in
-`RivuletCore`. The `PlayerProtocol` conformance stays tvOS. iOS has its own
-adapter, `RivuletiOS/Player/AetherPlayer.swift` (the only iOS file that imports
+`DreamCASTCore`. The `PlayerProtocol` conformance stays tvOS. iOS has its own
+adapter, `DreamCASTiOS/Player/AetherPlayer.swift` (the only iOS file that imports
 AetherEngine), driven by `IOSPlaybackController` (PiP, background audio, Now
-Playing). The mapping has not moved to `RivuletCore` yet, so a mapping fix
+Playing). The mapping has not moved to `DreamCASTCore` yet, so a mapping fix
 currently lands in both adapters. This is not bookkeeping: keeping both classes in one
 file also forced `@preconcurrency import AVFoundation` above the conditional,
 which silently loosened Swift 6 Sendable checking on the *shipping tvOS player*
@@ -277,7 +277,7 @@ for the iOS half's benefit.
 
 ### Folders, not a SwiftPM package
 
-A local `RivuletCore` package would enforce the boundary at compile time, but
+A local `DreamCASTCore` package would enforce the boundary at compile time, but
 every shared symbol would need `public` — a mechanical diff across 170+ files
 touching every access modifier. The folder buys the same boundary for a day's
 work, and the lint rule above makes the no-`#if` half mechanical. What lint
@@ -290,7 +290,7 @@ reach for on its own.
 
 ### Focus Management (tvOS)
 
-**On the primary (UIKit) surfaces, focus is the UIKit focus engine**: `preferredFocusEnvironments`, `didUpdateFocus`, `setNeedsFocusUpdate`, and `pressesBegan` for Siri Remote input. Use the `rivulet-tvos-uikit` skill before writing or debugging any of it — the focus/press/morph traps there are already solved and are not guessable.
+**On the primary (UIKit) surfaces, focus is the UIKit focus engine**: `preferredFocusEnvironments`, `didUpdateFocus`, `setNeedsFocusUpdate`, and `pressesBegan` for Siri Remote input. Use the `dreamcast-tvos-uikit` skill before writing or debugging any of it — the focus/press/morph traps there are already solved and are not guessable.
 
 The SwiftUI primitives below apply only to the remaining SwiftUI surfaces (Live TV slots, nav shells). No custom focus scope manager; isolation comes from system mechanisms:
 
@@ -318,7 +318,7 @@ split view, with its own panel radius, row pitch, focus platter and icon column.
 `ShellSidebarViewController`'s `Metrics` are measured against that. Do not
 measure the system sidebar (`UITabBarController`, `TabView(.sidebarAdaptable)`)
 as the reference: its numbers differ (a 52 pt panel radius against the Apple TV
-app's 40), and matching it moves Rivulet away from the app it sits beside. Only
+app's 40), and matching it moves DreamCAST away from the app it sits beside. Only
 the panel frame, the pill origin and the morph timing still come from the system
 sidebar.
 
@@ -603,7 +603,7 @@ most servers and fails on the ones reached by raw IP (#314, #337).
 
 #### Live TV
 Two layouts: What's On (`LiveBrowseViewController`, the default) and the Guide (`GuideLayoutView`). Both play through `LiveTVAetherPlayerViewController` on the VOD glass rail. Multiview (`LiveMultiviewViewController`) runs **AetherPlayer** per slot (`MultiStreamViewModel` instantiates `AetherPlayer()`, each tile binds the engine surface), up to 4 concurrent slots. HDHomeRun delivers a direct stream; DVB tuners require a Plex transcode URL with full client-profile parameters (see Plex Live TV section below).
-**Xtream Codes** (`RivuletCore/IPTV/XtreamService.swift`) is live channels only, never VOD or series: account check on `player_api.php` with no `action`, channels from `get_live_streams` + `get_live_categories` (not `get.php`), guide from one bulk `xmltv.php`, streams `/live/<user>/<pass>/<id>.ts`. Panels mix ints and strings for the same field, so replies are walked by hand; never put a reply body in a log or error, `player_api.php` echoes the password. Never loop `get_short_epg` across channels: it gets users rate-banned.
+**Xtream Codes** (`DreamCASTCore/IPTV/XtreamService.swift`) is live channels only, never VOD or series: account check on `player_api.php` with no `action`, channels from `get_live_streams` + `get_live_categories` (not `get.php`), guide from one bulk `xmltv.php`, streams `/live/<user>/<pass>/<id>.ts`. Panels mix ints and strings for the same field, so replies are walked by hand; never put a reply body in a log or error, `player_api.php` echoes the password. Never loop `get_short_epg` across channels: it gets users rate-banned.
 iOS reads the same `LiveTVDataStore` and saved sources and adds sources through the same `LiveTVSourceConnector`. Dispatcharr API keys and M3U playlist/guide URLs (which often embed credentials) live in the Keychain (`liveTVSourceToken_`, `liveTVSourceM3U_`, `liveTVSourceEPG_` + source id); the saved source JSON keeps one only if the Keychain write fails. An M3U source id is a hash of its URL (`m3uSourceId`), never the URL itself; older URL-keyed sources are re-keyed on launch with their saved channel ids renamed.
 
 ### Content Filter (VOD)
@@ -640,7 +640,7 @@ Rules that look wrong until you know them:
   on screen and blocks the silent read.
 - **moviecontentfilter.com's `.mcf` download is not in real time.** It rescales the
   title onto 0–99:59:59.999 and leaves the player to map it back with the release's
-  own start and end, which Rivulet can't know, so such a file is rejected as
+  own start and end, which DreamCAST can't know, so such a file is rejected as
   `.unsynchronized`. That site's EDL export takes the start and end and is the
   supported route. An MCF file is a full annotation, not a per-user filter, which is
   why `FilterCategory(mcfName:)` drops topics like product placement and kissing.
@@ -660,13 +660,13 @@ Rules that look wrong until you know them:
 
 **URL and user-activity entry points live on the SwiftUI scene and must stay
 there**: `.onOpenURL` and `.onContinueUserActivity` on the `WindowGroup` in
-`RivuletApp.swift`. In a scene-based app UIKit never calls the app delegate's
-`application(_:open:options:)`, and it fails silently. Rivulet handled links
+`DreamCASTApp.swift`. In a scene-based app UIKit never calls the app delegate's
+`application(_:open:options:)`, and it fails silently. DreamCAST handled links
 there for six months, and for that whole time every Top Shelf button opened the
 app and did nothing else.
 
-- **One link definition**: `Models/Shared/RivuletLink.swift` builds and parses
-  `rivulet://play` and `rivulet://detail`, and is compiled into the app and the
+- **One link definition**: `Models/Shared/DreamCASTLink.swift` builds and parses
+  `dreamcast://play` and `dreamcast://detail`, and is compiled into the app and the
   Top Shelf extension. Do not write the scheme, a host or a query name as a
   string anywhere else.
 - `DeepLinkHandler` holds a link that arrives before the shell is ready
@@ -675,8 +675,8 @@ app and did nothing else.
   running. A clean build says nothing about whether the scene receives the URL.
 
 ```bash
-xcrun simctl openurl <udid> "rivulet://detail?ratingKey=<key>"
-xcrun simctl openurl <udid> "rivulet://play?ratingKey=<key>"
+xcrun simctl openurl <udid> "dreamcast://detail?ratingKey=<key>"
+xcrun simctl openurl <udid> "dreamcast://play?ratingKey=<key>"
 ```
 
 ### Artwork analysis (Continue Watching, Top Shelf)
@@ -787,7 +787,7 @@ write either number anywhere else.
 ### Media providers (Plex, Jellyfin, Emby)
 
 All three backends sit behind one seam, on both apps,
-`RivuletCore/MediaProvider/MediaProvider.swift`, with `Plex/`, `Jellyfin/` and `Emby/` below it.
+`DreamCASTCore/MediaProvider/MediaProvider.swift`, with `Plex/`, `Jellyfin/` and `Emby/` below it.
 Views talk to the protocol. A non-Plex item plays through `ProviderPlayback+Prepare.swift`,
 which never names a backend.
 
@@ -803,7 +803,7 @@ which never names a backend.
   A card's Mark Watched / Remove reach every copy.
 - **The account's other Plex servers (#87) ride the same seam.** The selected
   server keeps `PlexDataStore` and the legacy `.plex` paths; every other server
-  on the account is a `PlexProvider` from `PlexExtraServers` (RivuletCore:
+  on the account is a `PlexProvider` from `PlexExtraServers` (DreamCASTCore:
   per-profile list and tokens from `/resources`, shared with iOS), shown beside
   Jellyfin by `ServerDataStore`. iOS keys the same servers on
   `PlexMetadata.serverID` / `PlexLibrary.serverID` / `PlexHub.serverID` (nil is
@@ -896,7 +896,7 @@ transports through `DirectionalInputBinding`). tvOS only.
 
 ### iCloud sync
 
-Both apps sync through `RivuletCore/Sync/`. Design, measurements and the one-time
+Both apps sync through `DreamCASTCore/Sync/`. Design, measurements and the one-time
 owner steps (developer portal, CloudKit schema deploy, profiles) are in
 `Docs/superpowers/specs/2026-11-05-icloud-sync-design.md` (maintainer-local).
 
@@ -907,7 +907,7 @@ owner steps (developer portal, CloudKit schema deploy, profiles) are in
   it is unencrypted on disk, and a key that can embed access (a list source URL) stays out.
 - **Credentials ride one CloudKit record, encrypted with `encryptedValues`.**
   `AccountVault` holds the record, `AccountSyncCoordinator` runs a cycle, and the
-  kinds (`SyncedAccountKind`: Plex, Live TV, Jellyfin, Emby) live in RivuletCore beside
+  kinds (`SyncedAccountKind`: Plex, Live TV, Jellyfin, Emby) live in DreamCASTCore beside
   their sessions. A new account type is one kind registered in `CloudSync.accountKinds`,
   not a per-app hook. Adoption verifies the token with one authenticated call first.
 - **Sign-out asks "this device only" or "all devices" when the account is shared**
@@ -979,8 +979,8 @@ let next = episodes.first(where: { $0.index == currentEpisodeIndex + 1 })
 ### Release Notes / Changelog
 
 Release notes live ONLY in the `changelogs` array in
-`Rivulet/Views/Components/WhatsNewView.swift` (root `CHANGELOG.md` is a stub).
-iOS has its own, `IOSChangelog.entries` in `RivuletiOS/Settings/IOSWhatsNew.swift`,
+`DreamCAST/Views/Components/WhatsNewView.swift` (root `CHANGELOG.md` is a stub).
+iOS has its own, `IOSChangelog.entries` in `DreamCASTiOS/Settings/IOSWhatsNew.swift`,
 keyed the same way from the `ios-vX.Y.Z-<build>` tag (sheet at launch, Account → Changelog).
 Entries are keyed by build-qualified version (`"1.0.3 (65)"`), newest first.
 Settings → About → Changelog renders the full history; the fresh-launch
@@ -1008,7 +1008,7 @@ engine-fix paragraph crowds out the app's own notes.
 ### UI text and localization (#457)
 
 Every string a user reads goes through the String Catalog
-(`Rivulet/Localizable.xcstrings`, `RivuletiOS/…`, `TopShelfExtension/…`; English
+(`DreamCAST/Localizable.xcstrings`, `DreamCASTiOS/…`, `TopShelfExtension/…`; English
 is the source, keys are the English text). Xcode extracts a literal only when it
 is passed as a localizable type, so:
 - **Funnels take `String.LocalizationValue`**: `SettingsRowItem(title:)`,
@@ -1034,7 +1034,7 @@ is passed as a localizable type, so:
 
 ### Adding Settings
 
-Settings is **UIKit** on tvOS (the iOS app's settings are a SwiftUI Form in the Account sheet, `RivuletiOS/Settings/`). A page is a list of `SettingsRowItem` values built in
+Settings is **UIKit** on tvOS (the iOS app's settings are a SwiftUI Form in the Account sheet, `DreamCASTiOS/Settings/`). A page is a list of `SettingsRowItem` values built in
 `Views/Settings/UIKit/SettingsPageModels.swift`; `SettingsPageViewController`
 renders each one through `SettingsCell`. Add a row by adding a case to the
 relevant page's builder, picking a `SettingsRowItem.Kind`:
@@ -1094,7 +1094,7 @@ CachedAsyncImage(url: imageURL) { phase in
 }
 ```
 
-**SVG goes through `SVGRasterizer`** (`RivuletCore/Images/`), reached from both image caches
+**SVG goes through `SVGRasterizer`** (`DreamCASTCore/Images/`), reached from both image caches
 when ImageIO declines the bytes (ImageIO and `UIImage` have no SVG decoder, measured on tvOS and
 iOS 27). That file is the only importer of SwiftDraw, which crashes or hangs on hostile files, and
 a logo URL comes from the IPTV provider. So `SVGSafetyCheck` runs first, and `SVGRasterizerTests`
@@ -1102,21 +1102,21 @@ pins each case. Fuzz again when bumping SwiftDraw: 24,000 mutated files found th
 
 ## Build & Run
 
-One-time setup: `RivuletCore/Config/Secrets.swift` is gitignored and required for **both** app targets to compile. Copy the template and fill in real values (or leave placeholders for a build that doesn't need Sentry/TMDB/etc. to actually work):
+One-time setup: `DreamCASTCore/Config/Secrets.swift` is gitignored and required for **both** app targets to compile. Copy the template and fill in real values (or leave placeholders for a build that doesn't need Sentry/TMDB/etc. to actually work):
 
 ```bash
-cp RivuletCore/Config/Secrets.swift.template RivuletCore/Config/Secrets.swift
+cp DreamCASTCore/Config/Secrets.swift.template DreamCASTCore/Config/Secrets.swift
 ```
 
-It lives in `RivuletCore/` rather than `Rivulet/Config/` because tvOS and iOS both start Sentry through `RivuletCore/Diagnostics/SentryStartup.swift`. The rest of `Rivulet/Config/` (`TMDBConfig`, `InsightsConfig`, `InputConfig`) is tracked, tvOS-only, and present in a fresh clone. Copying the template is the whole step: every target uses Xcode buildable-folder references (`PBXFileSystemSynchronizedRootGroup`), so files are picked up from disk and never need adding to the project. Both `RivuletApp.swift` and `RivuletiOSApp.swift` read `Secrets.sentryDSN`, so neither app compiles without it.
+It lives in `DreamCASTCore/` rather than `DreamCAST/Config/` because tvOS and iOS both start Sentry through `DreamCASTCore/Diagnostics/SentryStartup.swift`. The rest of `DreamCAST/Config/` (`TMDBConfig`, `InsightsConfig`, `InputConfig`) is tracked, tvOS-only, and present in a fresh clone. Copying the template is the whole step: every target uses Xcode buildable-folder references (`PBXFileSystemSynchronizedRootGroup`), so files are picked up from disk and never need adding to the project. Both `DreamCASTApp.swift` and `DreamCASTiOSApp.swift` read `Secrets.sentryDSN`, so neither app compiles without it.
 
-Two shared schemes: `Rivulet` (tvOS) and `Rivulet iOS`. No SwiftFormat is configured.
+Two shared schemes: `DreamCAST` (tvOS) and `DreamCAST iOS`. No SwiftFormat is configured.
 
 SwiftLint is configured, but **every stock rule is off** (`only_rules: [custom_rules]`
 in `.swiftlint.yml`). It is not a style checker here and has no opinion about force
 casts, line length, or naming. It runs four project-specific rules: no SwiftUI on a
 UIKit surface, no `UIHostingController` in a cell, no UIKit context menus (dead on
-tvOS 26, iOS exempt), and no `#if os(...)` in `RivuletCore/` (the platform boundary;
+tvOS 26, iOS exempt), and no `#if os(...)` in `DreamCASTCore/` (the platform boundary;
 the regex is line-anchored so comments may discuss the directive, and it deliberately
 avoids `match_kinds` — a wrong kind name silently disables a custom rule). A PR gate
 runs them on Linux; there is no local hook.
@@ -1134,24 +1134,24 @@ the code rather than suppress the rule.
 
 ```bash
 # Build for tvOS Simulator
-xcodebuild -scheme Rivulet -destination 'platform=tvOS Simulator,name=Apple TV' build
+xcodebuild -scheme DreamCAST -destination 'platform=tvOS Simulator,name=Apple TV' build
 
 # Build for device
-xcodebuild -scheme Rivulet -destination 'platform=tvOS,name=My Apple TV' build
+xcodebuild -scheme DreamCAST -destination 'platform=tvOS,name=My Apple TV' build
 
-# Run the full unit test suite (RivuletTests, XCTest, @testable import Rivulet)
-xcodebuild test -scheme Rivulet -destination 'platform=tvOS Simulator,name=Apple TV'
+# Run the full unit test suite (DreamCASTTests, XCTest, @testable import DreamCAST)
+xcodebuild test -scheme DreamCAST -destination 'platform=tvOS Simulator,name=Apple TV'
 
 # Run a single test class or method
-xcodebuild test -scheme Rivulet -destination 'platform=tvOS Simulator,name=Apple TV' \
-  -only-testing:RivuletTests/MediaItemTests
-xcodebuild test -scheme Rivulet -destination 'platform=tvOS Simulator,name=Apple TV' \
-  -only-testing:RivuletTests/MediaItemTests/test_id_returnsRef
+xcodebuild test -scheme DreamCAST -destination 'platform=tvOS Simulator,name=Apple TV' \
+  -only-testing:DreamCASTTests/MediaItemTests
+xcodebuild test -scheme DreamCAST -destination 'platform=tvOS Simulator,name=Apple TV' \
+  -only-testing:DreamCASTTests/MediaItemTests/test_id_returnsRef
 ```
 
-Most tests live in `RivuletTests/Unit/` (mirrors `Rivulet/` roughly by feature — Parsers, Playback, Player, Preferences, Services, Siri, etc.), with shared fixtures/mocks in `RivuletTests/Fixtures/`, `RivuletTests/Helpers/`, `RivuletTests/Mocks/`. A few sit at the `RivuletTests/` root (`PlexDeviceDecodingTests.swift`).
+Most tests live in `DreamCASTTests/Unit/` (mirrors `DreamCAST/` roughly by feature — Parsers, Playback, Player, Preferences, Services, Siri, etc.), with shared fixtures/mocks in `DreamCASTTests/Fixtures/`, `DreamCASTTests/Helpers/`, `DreamCASTTests/Mocks/`. A few sit at the `DreamCASTTests/` root (`PlexDeviceDecodingTests.swift`).
 
-**Building requires full Xcode** (not just Command Line Tools) since it's tvOS. There is still no CI test run — run tests locally. CI is split across two systems: `codemagic.yaml` archives and publishes to TestFlight on tag push (`v*` → tvOS, `ios-v*` → iOS), and `.github/workflows/` holds five workflows — the SwiftLint gate, two Claude review/mention bots, and two build checks that exist to guard the platform boundary: `build-ios.yml` compiles the `Rivulet iOS` scheme on PRs/pushes touching `RivuletCore/**`, `RivuletiOS/**`, or the project file (otherwise nothing compiles iOS between release tags), and `build-tvos-core.yml` compiles the tvOS scheme when shared code changes from the iOS side. Both are build-only; signing and archives stay on Codemagic.
+**Building requires full Xcode** (not just Command Line Tools) since it's tvOS. There is still no CI test run — run tests locally. CI is split across two systems: `codemagic.yaml` archives and publishes to TestFlight on tag push (`v*` → tvOS, `ios-v*` → iOS), and `.github/workflows/` holds five workflows — the SwiftLint gate, two Claude review/mention bots, and two build checks that exist to guard the platform boundary: `build-ios.yml` compiles the `DreamCAST iOS` scheme on PRs/pushes touching `DreamCASTCore/**`, `DreamCASTiOS/**`, or the project file (otherwise nothing compiles iOS between release tags), and `build-tvos-core.yml` compiles the tvOS scheme when shared code changes from the iOS side. Both are build-only; signing and archives stay on Codemagic.
 
 **One Xcode everywhere: `codemagic.yaml`'s `xcode:` pin.** Both build checks read it, and it must equal the Xcode you build with locally (27.2 today). When you upgrade local Xcode, bump the pin in the same commit (and the checks' `runs-on` image on a major). The type checker is the reason: a newer compiler accepts expressions an older one gives up on ("unable to type-check this expression in reasonable time"), so a mismatch passes every local build and breaks CI after the push. It happened twice before the pin (`e602163`, the favorites sort in `LiveTVDataStore`).
 
@@ -1159,7 +1159,7 @@ Most tests live in `RivuletTests/Unit/` (mirrors `Rivulet/` roughly by feature �
 
 **The Simulator does not fully mimic Apple TV**, especially for focus-engine behavior. Treat Simulator-only verification of tvOS focus/remote-input changes as provisional; say so rather than declaring it fixed.
 
-**`Docs/` is gitignored** (untracked on purpose, `c89b52d`), though some files under it are force-added and do ship: the `superpowers/` plans, specs and handoff, `handoff/`, `release/screenshots/` (App Store art), and `AETHER_ENGINE_STARTUP_NOTES.md`. What is *not* in the repo is `Docs/RIVULET_PLAYER.md` and `Docs/DESIGN_GUIDE.md`, both referenced throughout this file; they live only on the maintainer's machine. The `aether-update` and `rivulet-tvos-uikit` skills referenced above are also absent — `.claude/` is gitignored with nothing force-added. If a referenced doc or skill is missing in your environment, say so and proceed carefully rather than guessing its contents.
+**`Docs/` is gitignored** (untracked on purpose, `c89b52d`), though some files under it are force-added and do ship: the `superpowers/` plans, specs and handoff, `handoff/`, `release/screenshots/` (App Store art), and `AETHER_ENGINE_STARTUP_NOTES.md`. What is *not* in the repo is `Docs/RIVULET_PLAYER.md` and `Docs/DESIGN_GUIDE.md`, both referenced throughout this file; they live only on the maintainer's machine. The `aether-update` and `dreamcast-tvos-uikit` skills referenced above are also absent — `.claude/` is gitignored with nothing force-added. If a referenced doc or skill is missing in your environment, say so and proceed carefully rather than guessing its contents.
 
 ## Key Files
 
@@ -1189,19 +1189,19 @@ Most tests live in `RivuletTests/Unit/` (mirrors `Rivulet/` roughly by feature �
 | Sidebar rows (pure) | `Views/TVNavigation/UIKit/ShellSidebarModel.swift` |
 | Launch profile picker | `Views/Components/ProfilePickerOverlay.swift` |
 | Sidebar profile panel | `Views/Components/ProfileSwitcherPopup.swift` |
-| `rivulet://` links | `Models/Shared/RivuletLink.swift` |
+| `dreamcast://` links | `Models/Shared/DreamCASTLink.swift` |
 | Deep link handling | `Services/DeepLinkHandler.swift` |
 | Continue Watching card | `Views/Media/UIKit/Cells/ContinueWatchingCardCompositor.swift` |
 | Artwork analysis and scoring | `Views/Media/UIKit/Cells/ContinueWatchingCardPlacement.swift` |
 | Home hero backdrop, scrim and motion | `Views/Media/PlexHome/UIKit/HeroBackdropView.swift` |
 | Top Shelf logo placement | `Services/Cache/TopShelfImageCompositor.swift` |
 | Focus memory | `Services/Focus/FocusMemory.swift` |
-| Watch progress rule | `RivuletCore/Models/Media/WatchProgressPolicy.swift` |
-| Plex star rating / favorite | `RivuletCore/Models/Plex/PlexUserRating.swift` |
-| Plex API | `RivuletCore/Plex/PlexNetworkManager.swift` |
-| Backend seam (Plex, Jellyfin, Emby) | `RivuletCore/MediaProvider/MediaProvider.swift` |
-| Jellyfin provider | `RivuletCore/MediaProvider/Jellyfin/JellyfinProvider.swift` |
-| Emby provider | `RivuletCore/MediaProvider/Emby/EmbyProvider.swift` |
+| Watch progress rule | `DreamCASTCore/Models/Media/WatchProgressPolicy.swift` |
+| Plex star rating / favorite | `DreamCASTCore/Models/Plex/PlexUserRating.swift` |
+| Plex API | `DreamCASTCore/Plex/PlexNetworkManager.swift` |
+| Backend seam (Plex, Jellyfin, Emby) | `DreamCASTCore/MediaProvider/MediaProvider.swift` |
+| Jellyfin provider | `DreamCASTCore/MediaProvider/Jellyfin/JellyfinProvider.swift` |
+| Emby provider | `DreamCASTCore/MediaProvider/Emby/EmbyProvider.swift` |
 | Glass row styling | `Views/Components/GlassRowStyle.swift` |
 | Settings rows / pages | `Views/Settings/UIKit/SettingsPageModels.swift` |
 | Player canon docs | `Docs/RIVULET_PLAYER.md` |
@@ -1228,11 +1228,11 @@ From `Docs/DESIGN_GUIDE.md`:
 Every PR review — contributor or AI-generated — requires two assessments, not one:
 
 1. **Technical**: Will it work? Bugs, Swift 6 correctness, edge cases, regressions.
-2. **Fit**: Does it belong in Rivulet? Apply these filters:
+2. **Fit**: Does it belong in DreamCAST? Apply these filters:
    - Does it match the design philosophy above (Simplicity First, no "just in case" features)?
    - Is this better owned by the OS/platform? (If AVPlayer / AetherEngine gets it for free, defer to the system rather than replicate.)
    - Does it add ongoing maintenance surface the project has to own?
-   - Does it pull Rivulet toward a focused, calm product or away from it?
+   - Does it pull DreamCAST toward a focused, calm product or away from it?
 
 Good code that adds the wrong thing is still a no. A verdict of MERGE requires both assessments to pass.
 
@@ -1247,7 +1247,7 @@ as cleanup.
 ## Troubleshooting
 
 ### Focus Not Working in Overlay
-UIKit surfaces (the usual case): consult the `rivulet-tvos-uikit` skill first. Two traps recur — `indexPathForPreferredFocusedView` must return a path whose cell EXISTS right now, and `setNeedsFocusUpdate` is ignored unless the requesting environment currently CONTAINS focus.
+UIKit surfaces (the usual case): consult the `dreamcast-tvos-uikit` skill first. Two traps recur — `indexPathForPreferredFocusedView` must return a path whose cell EXISTS right now, and `setNeedsFocusUpdate` is ignored unless the requesting environment currently CONTAINS focus.
 
 SwiftUI surfaces only:
 - Use `fullScreenCover` for focus-isolated overlays (provides its own focus hierarchy)
@@ -1269,11 +1269,11 @@ SwiftUI surfaces only:
 
 ## Player (AetherPlayer / AVPlayer) on tvOS
 
-VOD is served by AetherPlayer (`aether` route, the default) or AVPlayer (`hls` route: server transcode). Live TV runs on AetherPlayer per grid slot with `LoadOptions.isLive`. AetherEngine does its own demux + HLS-fMP4 remux + HDR handling internally; Rivulet has no app-level FFmpeg layer anymore (the packages are linked transitively through AetherEngine only).
+VOD is served by AetherPlayer (`aether` route, the default) or AVPlayer (`hls` route: server transcode). Live TV runs on AetherPlayer per grid slot with `LoadOptions.isLive`. AetherEngine does its own demux + HLS-fMP4 remux + HDR handling internally; DreamCAST has no app-level FFmpeg layer anymore (the packages are linked transitively through AetherEngine only).
 
 ### HDR / DV
 - Aether drives `AVDisplayManager.preferredDisplayCriteria` itself (host `DisplayCriteriaManager` stands down on the aether route).
-- DV is engine-owned; the RPU stays in the samples and Apple's decoder applies it. P5 is a `dvh1` sample entry with `dvcC` and `CODECS="dvh1.05.LL"`. P8.1 / P8.4 are `hvc1` + `dvvC` with `SUPPLEMENTAL-CODECS="dvh1.08.LL/db1p"` (`/db4h` for 8.4), and the HDMI criteria request `dvh1`. The supplemental only rides the master playlist, which is served once the panel is in HDR, so real DV needs a DV TV plus Match Dynamic Range (or HDR/DV output locked). P7 is converted live to single-layer 8.1 (libdovi, EL dropped) on a DV panel. Without DV on the TV, P7 plays the HDR10 base. P8.2 plays its SDR base. Without DV on the TV, 8.x plays its base layer. Rivulet sets neither `dolbyVisionHandling` nor `forceDolbyVisionOnNonDVDisplay`, so the engine defaults apply. P5 has no engine stills, so its scrub previews come from the server's thumbnails when it has them. Routing lives in the engine's `CodecRoutePolicy.swift`.
+- DV is engine-owned; the RPU stays in the samples and Apple's decoder applies it. P5 is a `dvh1` sample entry with `dvcC` and `CODECS="dvh1.05.LL"`. P8.1 / P8.4 are `hvc1` + `dvvC` with `SUPPLEMENTAL-CODECS="dvh1.08.LL/db1p"` (`/db4h` for 8.4), and the HDMI criteria request `dvh1`. The supplemental only rides the master playlist, which is served once the panel is in HDR, so real DV needs a DV TV plus Match Dynamic Range (or HDR/DV output locked). P7 is converted live to single-layer 8.1 (libdovi, EL dropped) on a DV panel. Without DV on the TV, P7 plays the HDR10 base. P8.2 plays its SDR base. Without DV on the TV, 8.x plays its base layer. DreamCAST sets neither `dolbyVisionHandling` nor `forceDolbyVisionOnNonDVDisplay`, so the engine defaults apply. P5 has no engine stills, so its scrub previews come from the server's thumbnails when it has them. Routing lives in the engine's `CodecRoutePolicy.swift`.
 
 ## Plex Discover API
 

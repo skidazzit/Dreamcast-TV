@@ -1,0 +1,127 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+// Copyright (C) 2025-2026 Bain Gurley
+
+import Foundation
+import Combine
+
+// MARK: - SubtitleModel
+
+/// Manages the active-cue set for an Aether-driven subtitle overlay.
+///
+/// Callers feed this model the current source time and the full cue list
+/// from AetherPlayer; the model handles binary-search lookup plus the
+/// optional display delay that lets users nudge subtitle timing.
+///
+/// Operates on `AetherSubtitleCue` (DreamCAST's bridge type, carrying text AND
+/// bitmap bodies), not DreamCAST's text-only `SubtitleCue`, so the
+/// overlay can render PGS/DVB bitmap subtitles too.
+@MainActor
+final class SubtitleModel: ObservableObject {
+
+    // MARK: - Published state
+
+    /// Full sorted cue list. Set via update(cues:).
+    @Published var cues: [AetherSubtitleCue] = []
+
+    /// Current source-timeline position in seconds, mirroring AetherPlayer.sourceTime.
+    @Published var sourceTime: Double = 0 { didSet { recomputeActiveCues() } }
+
+    /// Subtitle display delay in seconds. Positive values shift subtitles earlier
+    /// (reduce effective time), negative values shift later.
+    @Published var delaySeconds: Double = 0 { didSet { recomputeActiveCues() } }
+
+    /// Cues on screen right now, reassigned only when the set changes, so
+    /// subscribers can rebuild on every value.
+    @Published private(set) var activeCues: [AetherSubtitleCue] = []
+
+    /// Content keys of `activeCues`, kept alongside it so the change test is a
+    /// key comparison rather than a full cue comparison.
+    private var activeKeys: [AetherSubtitleCue.ContentKey] = []
+
+    // MARK: - Derived
+
+    /// Maximum cue duration observed in the current cue list, rounded up to
+    /// the next whole second, with a minimum of 6 seconds.
+    ///
+    /// Bounds the backward walk in `computeActiveCues`.
+    private(set) var maxCueDuration: Double = 6
+
+    // MARK: - Mutation
+
+    /// Replace the cue list and recompute maxCueDuration.
+    ///
+    /// Cues must arrive sorted by startTime ascending (AetherEngine guarantees this).
+    /// If they aren't, the binary search in activeCues will produce wrong results.
+    func update(cues: [AetherSubtitleCue]) {
+        self.cues = cues
+        // Order matters: the active-set walk is bounded by `maxCueDuration`, so
+        // it has to be current before the set is recomputed.
+        recomputeMaxDuration()
+        recomputeActiveCues()
+    }
+
+    /// Recomputes the active set, publishing only when it actually changed.
+    private func recomputeActiveCues() {
+        let next = computeActiveCues()
+        let keys = next.map(\.contentKey)
+        guard keys != activeKeys else { return }
+        activeKeys = keys
+        activeCues = next
+    }
+
+    private func recomputeMaxDuration() {
+        guard !cues.isEmpty else {
+            maxCueDuration = 6
+            return
+        }
+        let maxRaw = cues.reduce(0.0) { acc, cue in
+            max(acc, cue.endTime - cue.startTime)
+        }
+        maxCueDuration = max(maxRaw.rounded(.up), 6)
+    }
+
+    // MARK: - Active cue lookup
+
+    /// Cues active at `sourceTime - delaySeconds` (both ends inclusive): binary
+    /// search, then a bounded walk left. Dedupes on content key because the
+    /// engine appends re-decoded duplicates on every rewind; simultaneous
+    /// speakers differ in text, so both survive.
+    private func computeActiveCues() -> [AetherSubtitleCue] {
+        let t = sourceTime - delaySeconds
+        guard !cues.isEmpty else { return [] }
+
+        // Binary search: find rightmost index where startTime <= t.
+        var lo = 0
+        var hi = cues.count - 1
+        var pivot = -1
+        while lo <= hi {
+            let mid = (lo + hi) / 2
+            if cues[mid].startTime <= t {
+                pivot = mid
+                lo = mid + 1
+            } else {
+                hi = mid - 1
+            }
+        }
+
+        guard pivot >= 0 else { return [] }
+
+        // Walk left within the maxCueDuration window, dropping duplicates.
+        let windowStart = t - maxCueDuration
+        var result: [AetherSubtitleCue] = []
+        var seen: Set<AetherSubtitleCue.ContentKey> = []
+        var i = pivot
+        while i >= 0 && cues[i].startTime > windowStart {
+            let cue = cues[i]
+            if cue.startTime <= t && cue.endTime >= t {
+                if seen.insert(cue.contentKey).inserted {
+                    result.append(cue)
+                }
+            }
+            i -= 1
+        }
+
+        // Result was collected right-to-left; reverse to restore startTime order.
+        return result.reversed()
+    }
+}

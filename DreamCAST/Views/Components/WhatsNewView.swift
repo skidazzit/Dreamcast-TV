@@ -1,0 +1,768 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+// Copyright (C) 2025-2026 Bain Gurley
+
+//
+//  WhatsNewView.swift
+//  DreamCAST
+//
+//  Shows a one-time "What's New" overlay when the app updates
+//  to a version with a changelog entry.
+//
+
+import SwiftUI
+
+
+struct WhatsNewView: View {
+    @Binding var isPresented: Bool
+    let version: String
+
+    @FocusState private var focusedItem: FocusItem?
+
+    private enum FocusItem: Hashable {
+        case feature(Int)
+        case continueButton
+    }
+
+    private var features: [String] {
+        Self.features(for: version) ?? []
+    }
+
+    var body: some View {
+        VStack {
+            Spacer(minLength: 0)
+            card
+            Spacer(minLength: 0)
+        }
+        .onAppear {
+            focusedItem = .continueButton
+        }
+        .onExitCommand {
+            isPresented = false
+        }
+    }
+
+    private var card: some View {
+        VStack(spacing: 0) {
+            // Header (fixed above the scroll area)
+            VStack(spacing: 8) {
+                Text("What's New")
+                    .font(.system(size: 46, weight: .bold))
+                    .foregroundStyle(.white)
+
+                Text("Version \(version)")
+                    .font(.system(size: 23, weight: .regular))
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+            .padding(.top, 40)
+            .padding(.bottom, 24)
+
+            // Scrollable feature list. Each row is focusable so the
+            // tvOS focus engine auto-scrolls the ScrollView when the
+            // user navigates up/down through the items.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(features.enumerated()), id: \.offset) { index, feature in
+                        featureRow(text: feature, isFocused: focusedItem == .feature(index))
+                            .focusable(true)
+                            .focused($focusedItem, equals: .feature(index))
+                            .focusEffectDisabled()
+                    }
+                }
+                .padding(.horizontal, 28)
+                .padding(.vertical, 8)
+            }
+            .scrollIndicators(.visible)
+            .frame(maxHeight: 460)
+
+            // Continue button (fixed below the scroll area) — always
+            // visible and receives initial focus.
+            Button {
+                isPresented = false
+            } label: {
+                Text("Continue")
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(focusedItem == .continueButton ? .black : .white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .fill(focusedItem == .continueButton ? .white : .white.opacity(0.12))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .strokeBorder(
+                                focusedItem == .continueButton ? .clear : .white.opacity(0.15),
+                                lineWidth: 1
+                            )
+                    )
+            }
+            .buttonStyle(.plain)
+            .focused($focusedItem, equals: .continueButton)
+            .focusEffectDisabled()
+            .scaleEffect(focusedItem == .continueButton ? 1.04 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: focusedItem)
+            .padding(.horizontal, 32)
+            .padding(.top, 20)
+            .padding(.bottom, 36)
+        }
+        .frame(width: 620)
+        .background(
+            RoundedRectangle(cornerRadius: 32, style: .continuous)
+                .fill(.black.opacity(0.3))
+        )
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 32, style: .continuous))
+    }
+
+    /// A changelog line starting with `## ` is a heading over the lines after
+    /// it: drawn bold with no dot. Returns its text, or nil for a bullet.
+    static func heading(_ line: String) -> String? {
+        line.hasPrefix("## ") ? String(line.dropFirst(3)) : nil
+    }
+
+    /// A changelog line starting with `> ` is a personal note: plain text with
+    /// no dot. Returns its text, or nil otherwise.
+    static func note(_ line: String) -> String? {
+        line.hasPrefix("> ") ? String(line.dropFirst(2)) : nil
+    }
+
+    private func featureRow(text: String, isFocused: Bool) -> some View {
+        let heading = Self.heading(text)
+        return HStack(alignment: .top, spacing: 14) {
+            if heading == nil {
+                Circle()
+                    .fill(.white.opacity(isFocused ? 0.9 : 0.5))
+                    .frame(width: 8, height: 8)
+                    .padding(.top, 13)
+            }
+
+            Text(heading ?? text)
+                .font(.system(size: heading == nil ? 24 : 26, weight: heading == nil ? .medium : .bold))
+                .foregroundStyle(.white.opacity(isFocused || heading != nil ? 1.0 : 0.85))
+                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.leading)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 14)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(isFocused ? .white.opacity(0.14) : .clear)
+        )
+        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isFocused)
+    }
+
+    // MARK: - Changelog Data
+
+    static let changelogs: [(version: String, features: [String])] = [
+        ("1.2.0 (123)", [
+            "> Thank you to everyone who sent a PR!",
+            "Emby support, next to Plex and Jellyfin",
+            "Arrange Home: reorder and hide rows, add favorites and playlists. @DIYtechie",
+            "The hero can mix several sources, and Left goes back a title. @danieldjupvik",
+            "Mark favorites on any server, with an optional Favorites page. @DennisR-git",
+            "Jellyfin and Emby theme videos play behind the hero and details. @smidley",
+            "Sidebar: Now Playing next to your profile, and Up opens it. @DIYtechie",
+            "Live TV can rewind through a channel's window, with past shows. @tresby",
+            "Shuffle libraries and shows, and delete episodes from long-press menus",
+            "Specials now come after the last season. @priyanshuppal",
+            "Greek is available. @Camthalion77",
+            "Updated AetherEngine to 7.57.0",
+            "Other small changes and fixes",
+        ]),
+        ("1.2.0 (122)", [
+            "> I removed Dolby Vision FEL and Height Speakers because of licensing uncertainty. Profile 7 now plays as 8.1 on a Dolby Vision TV, and TrueHD and DTS-HD play as lossless 7.1. Sorry if this is what brought you to DreamCAST.",
+        ]),
+        ("1.2.0 (121)", [
+            "> Thanks for the bugs, support, and PRs! I'm on vacation this week, so these are tested on a simulator but not a real Apple TV.",
+            "Trailers options in Playback",
+            "Added Localization. German is available! Welcome PRs for other languages. @JoschaP",
+            "Jellyfin Quick Connect, Music Videos, and Recently Added music row. @DIYtechie",
+            "SVG logos in Live TV",
+            "A title in 2 libraries on one server is now one card in CW",
+            "Plex QR sign in. @priyanshuppal",
+            "Profile Picker shows on return after backgrounding for 30 seconds. @twinkie0101",
+            "Updated AetherEngine to 7.56.0",
+            "Other small changes and fixes",
+        ]),
+        ("1.1.1 (120)", [
+            "Episode and season pages now show their extras.",
+            "The player's info panels stay open while you're reading them.",
+            "Continue Watching no longer adds a title to artwork that already shows one.",
+            "Live TV shows film release years and marks new airings from Plex guides.",
+            "Music's Now Playing remembers lyrics and opens when you return mid-song.",
+            "Subtitle tracks list language first and stay set on autoplayed episodes.",
+            "Your Watchlist now finds titles on your account's other Plex servers.",
+            "At home, DreamCAST now prefers your Plex server's local connection.",
+            "Change audio and subtitle tracks from Control Center on iPhone and iPad.",
+            "DreamCAST now follows the Apple TV's caption and Audio Description settings.",
+        ]),
+        ("1.1.1 (119)", [
+            "Subtitle and audio language settings are now saved for each Plex profile.",
+            "New Seasons page lists the episodes beside the season poster.",
+            "Long press an episode thumbnail to open its options.",
+            "Ending a session from Plex now stops playback and shows the reason.",
+            "Top Shelf now leaves out items from rows you've hidden from Home.",
+            "New Delay control in the player's audio menu moves sound earlier or later.",
+            "Fixed smart playlists showing up empty.",
+            "Library grids now follow each Plex library's Collections setting.",
+            "Updated AetherEngine to 7.53.0 with SD and 720p upscaling. Enable in Settings → Playback.",
+        ]),
+        ("1.1.1 (118)", [
+            "The Home hero now shows what's trending in your Jellyfin libraries.",
+            "Top Shelf now fills in when Jellyfin is your only server.",
+            "Subtitles menu matches more closely to Apple.",
+            "Hold the Subtitles button to turn subtitles on or off.",
+            "Picking a forced subtitle track no longer switches the setting to Forced Only.",
+            "Turning subtitles off for one title no longer turns off Foreign Audio subtitles.",
+            "Subtitles set to Always now show a forced track when it is the only one.",
+            "Fixed thin, broken subtitle letters with the Uniform text edge style.",
+            "Subtitles now match the size, spacing and position Apple's player uses.",
+            "The player's info panels now close by themselves when left alone.",
+            "Plex's dashboard now shows bandwidth for Direct Play on your network.",
+            "Changing Live TV channels no longer shows a blank screen for a moment.",
+            "Live channels from Tvheadend, HDHomeRun and Plex tuners now start in a few seconds.",
+            "The Live TV guide now shows sub-channel numbers like 10.1.",
+            "The Live TV guide marks new episodes and live airings.",
+            "Jellyfin guide rows now show the episode title or number.",
+        ]),
+        ("1.1.1 (117)", [
+            "The Home hero can show Trending, Continue Watching, Recently Added or Watchlist.",
+            "New Skip Preview setting opens titles straight to their full details.",
+            "Posters now show the edition, such as Director's Cut, as a badge.",
+            "Generated subtitles and word muting now get their speech model from the App Store.",
+            "Redesigned adding a Live TV source, with every source type listed by name.",
+            "New early support for Tvheadend in Live TV, with channels, guide and recording.",
+            "Generated subtitles and word muting hear only the dialogue on surround titles.",
+            "Generated subtitles no longer switch to another track after the player reloads.",
+            "Fixed playback crashes on very large Plex libraries.",
+            "Large libraries and Live TV guides use less memory.",
+            "Height channels now also play with Dolby Vision FEL.",
+            "Updated AetherEngine to 7.50.0.",
+        ]),
+        ("1.1.1 (115)", [
+            "A center click now pauses the video once the controls are showing.",
+            "Fixed skipping while paused.",
+            "Player controls are easier to read over bright scenes.",
+            "Chapters show a picture even when your server has none, and open on the current chapter.",
+            "Audio tracks are listed by language and format instead of file names.",
+            "Insights cards have a refreshed look and open faster.",
+        ]),
+        ("1.1.0 (114)", [
+            "New generated English subtitles, written from the dialogue on your Apple TV.",
+            "New setting turns on generated English subtitles when a title has none.",
+            "Content Filtering is simpler: one Profanity page, split into Audio and Visual.",
+            "Skip settings now read Off, Manual or Automatic.",
+            "Settings headings are readable again in dark mode.",
+            "The Home hero's Next button is a glass circle again.",
+        ]),
+        ("1.1.0 (113)", [
+            "Content Filtering can now mute words of your own, such as \"stupid\".",
+            "The content filter now mutes just the offending word, not the whole line.",
+            "Titles with no subtitles can now be filtered from their dialogue.",
+            "Multi-part movies now play through every part.",
+            "Updated AetherEngine to 7.48.0.",
+            "Top Shelf now shows posters for Continue Watching and Recently Added.",
+            "New Top Shelf setting in Appearance brings back the full screen artwork.",
+        ]),
+        ("1.1.0 (112)", [
+            "Jellyfin Live TV can now record an airing, a series, or new episodes.",
+            "Live TV shows the programme's artwork and summary while a channel tunes.",
+            "Live TV now closes the player when the app goes to the background.",
+            "Posters with no artwork now show the title.",
+            "Content ratings no longer show a country prefix.",
+        ]),
+        ("1.1.0 (111)", [
+            "Jellyfin titles now show their trailers and extras on the details page.",
+            "Top Shelf shows Recently Added when there is nothing in Continue Watching.",
+        ]),
+        ("1.1.0 (110)", [
+            "New onboarding screen and flow.",
+            "You can now quickly page through the preview carousel.",
+            "Skip buttons can each be turned off completely so they do not show.",
+            "Added an option for audio language to follow what's set in your Plex account.",
+            "The Home hero no longer shows an item with low-resolution artwork.",
+            "The sidebar profile row no longer takes focus if an account has only one profile.",
+            "New Rating setting in Appearance picks which score shows on a title's details.",
+            "Combined Live TV sources now each get a Guide tab and a What's On row.",
+            "New Send Diagnostics in About gives you a code to share when reporting a problem.",
+            "New in Live TV: switch between a Dispatcharr channel's streams from the player.",
+            "The player's Details panel now shows a Dolby Vision video's FEL or MEL layer.",
+            "The Live TV guide no longer downloads while a video plays (@PieterVO).",
+            "Fixed light corners on Continue Watching cards on tvOS 26 (@PieterVO).",
+            "Updated AetherEngine to 7.47.0",
+        ]),
+        ("1.1.0 (106)", [
+            "Initial multiserver support. I've tested, but don't regularly use multiple servers, so please provide feedback and bugs on GitHub.",
+            "Top Shelf now shows Continue Watching from all servers (including Jellyfin).",
+            "Added new ratings card at the bottom of an item's page.",
+            "Added clarity to settings options.",
+            "Reorganized Playback settings.",
+            "With Height Speakers on, FEL videos now keep FEL and play without heights.",
+            "New Dolby Vision FEL setting in Playback. Turn it off to keep heights instead.",
+            "Fixed the player's Details panel showing SDR for Dolby Vision FEL videos.",
+            "Added Plex and Jellyfin video playlists to the sidebar, with shuffle and editing.",
+            "Hide and move items directly from the sidebar.",
+        ]),
+        ("1.1.0 (102)", [
+            "Added Jellyfin music libraries.",
+            "Added Jellyfin Live TV. Plex and Jellyfin Live TV now show up automatically.",
+            "Live TV guide now loads days ahead and stays up to date.",
+            "Fixed height channels not working.",
+            "Fixed full Dolby Vision for Profile 7 FEL titles not turning on.",
+            "Height Speakers now opens a list to pick your speaker layout.",
+        ]),
+        ("1.1.0 (101)", [
+            "Fixed the empty Enhance Dialogue levels menu on titles with many audio tracks.",
+        ]),
+        ("1.1.0 (100)", [
+            "Added folder view.",
+            "Added delete to the long press menu.",
+            "Added audio and subtitle language options to Settings.",
+            "Switch Plex servers in Settings without signing out.",
+            "New welcome screen.",
+            "If you only use Live TV, DreamCAST opens straight to it.",
+            "Added Xtream Codes sources to Live TV.",
+            "Added Enhance Dialogue levels to the audio menu.",
+            "Height channels for object-based soundtracks, in Settings under Playback.",
+            "UI tweaks.",
+            "Updated AetherEngine to 7.44.0",
+        ]),
+        ("1.1.0 (98)", [
+            "Full Dolby Vision for Profile 7 FEL titles on Dolby Vision TVs.",
+            "Fixed the white edge on Continue Watching corners when a card is selected.",
+            "Updated AetherEngine to 7.39.0",
+        ]),
+        ("1.1.0 (97)", [
+            "New scores for Live TV games. Very pleased with this. Access them from a sports match in the \"Scores\" button below the scrubber.",
+            "New scores layout in Multiview when viewing a sports match.",
+            "Up Next is now a dismissable glass card.",
+            "Search and download subtitles from the menu.",
+            "Added autoplay limit (passout protection).",
+            "App attestation bug fix.",
+            "Fixed: text subtitles on transcoded playback keep original style.",
+        ]),
+        ("1.1.0 (96)", [
+            "Lots of improvements for Music libraries! Really happy about it.",
+            "Initial support for photo libraries.",
+            "Apple's Vision places title logos on Continue Watching, Top Shelf and Pause.",
+            "Better library grid scrolling.",
+            "Improved Search.",
+            "Improved Content Filtering (still a work in progress).",
+            "Separate Skip Back and Skip Forward settings.",
+            "Plex Live TV guide loads on slow servers.",
+            "Fixed Top Shelf buttons not opening the item.",
+            "Other bug fixes.",
+        ]),
+        ("1.0.7 (95)", [
+            "Cast page improvements.",
+            "Subtitles turn on briefly when you skip back.",
+            "New Enhance Dialogue and Reduce Loud Sounds audio options.",
+            "Live TV fixes for favorites, Back, and the sidebar tab.",
+            "Fixes for unwatched counts, Settings, and Back navigation.",
+            "Updated AetherEngine to 7.32.3",
+        ]),
+        ("1.0.6 (94)", [
+            "Subtitles turn on briefly when you skip back.",
+            "New Enhance Dialogue and Reduce Loud Sounds audio options.",
+            "Live TV fixes for favorites, Back, and the sidebar tab.",
+            "Fixes for unwatched counts, Settings, and Back navigation.",
+            "Updated AetherEngine to 7.32.3",
+        ]),
+        ("1.0.6 (93)", [
+            "Added ability to choose stream quality.",
+            "Converted streams start more reliably.",
+        ]),
+        ("1.0.6 (92)", [
+            "Painstakingly recreated Apple's player chrome.",
+            "Added multi-file support for Plex.",
+            "Added long press Go to Show option.",
+            "Added ability to mark a show as watched/unwatched.",
+            "Live TV program art shows more often (vs the channel logo).",
+            "Updated AetherEngine to 7.25.3.",
+            "Bug fixes.",
+        ]),
+        ("1.0.6 (91)", [
+            "Initial support for Jellyfin. WIP. Please report bugs and issues on GitHub.",
+            "Scrubbing shows previews even with thumbnail generation off.",
+            "Removing a title from CW keeps it removed.",
+            "Live TV multiview available from Guide.",
+            "Improved Guide design, performance, and layout.",
+            "Added Plex collection support. Each library has a Collections row. Long press for Pin options.",
+            "Better support for ASS/SSA subtitles.",
+            "Fix: a crash when long-pressing a Home tile.",
+        ]),
+        ("1.0.6 (90)", [
+            "Favorite any Live TV channel: hold Select on it in What's On or the guide",
+            "Favorites from every source share one list, in the order you choose",
+            "Reorder your favorites in the Live TV settings",
+            "Channels watched in Multiview now count toward Recently Watched and For You",
+            "Turning off Suggestions asks whether to erase what it learned",
+            "Default Layout and Above Libraries are now in the Live TV settings too",
+        ]),
+        ("1.0.6 (89)", [
+            "Dispatcharr channels play smoothly now, with sound in sync on HomePod",
+            "What's On has a Recently Watched row to jump back into a channel",
+            "A new For You row suggests what's on now, based on what you watch",
+            "Turn For You off with Suggestions in the Live TV settings",
+            "Add Dispatcharr with your username and password instead of an API key",
+            "Plex Live TV waits for slow channels to start instead of giving up",
+            "Leaving a Plex channel before it starts now frees its tuner",
+            "Multiview's Add More no longer shows the same channel twice",
+        ]),
+        ("1.0.6 (88)", [
+            "## Lots of Live TV Improvements!",
+            "Live TV opens on the new What's On page, with rows by what's on and by genre",
+            "The Channels layout is gone; the Guide is still under Default Layout",
+            "Watch up to four live channels at once in the new Multiview",
+            "Multiview suggests channels like the one you're watching first",
+            "Pause, rewind and return to live on any channel",
+            "Scrub back through a paused channel with picture previews",
+            "Record a show, a series or only new episodes with Plex DVR or Dispatcharr",
+            "Hold Select on a show in the guide to see what it's about and record it",
+            "The live player's controls now include Record and Multiview",
+            "Shows set to record are marked in the guide, What's On and the player",
+            "Going back from a channel keeps it playing in the corner",
+            "The guide now shows channel numbers and the current time",
+            "Plex favorite channels now have their own tab in the guide",
+            "Live TV now reads the guide from every Plex DVR, not just the first",
+            "Plex Live TV channels now play directly, with their original audio and teletext",
+            "The guide now picks the right artwork for posters and backgrounds",
+            "IPTV channels that need headers from the playlist now play",
+            "Dispatcharr sources now take an API key, which turns on recording",
+            "Multiview now stops retrying a channel that won't play and says so",
+            "Fixed Play and Pause doing nothing in Live TV",
+            "Fixed the guide jumping hours ahead after going back from a channel",
+            "Fixed a trail behind the selection when moving through the guide",
+            "Fixed a crash when leaving Multiview",
+            "Fixed a short silence at the start of a channel on HomePod and AirPlay speakers",
+            "## Other Improvements",
+            "Content filtering now works with subtitles turned off",
+            "Pause content filtering for a title from the player's controls",
+            "Skipping now works on IR, CEC and click-only remotes, one skip per click",
+            "Fixed Back leaving two screens at once from game controllers and keyboards",
+            "Fixed Music reacting to remote buttons meant for a video",
+        ]),
+        ("1.0.6 (87)", [
+            "New Watchlist tab in the sidebar shows everything you saved",
+            "The Watchlist row on Home no longer stops at 20 items",
+            "Fixed search results drawing underneath the keyboard",
+        ]),
+        ("1.0.6 (85)", [
+            "Updated AetherEngine to 7.7.0",
+            "The next episode now starts faster when autoplay is on",
+            "Settings now shows which playback engine version you are running",
+            "Fixed playback failing outright when the server falls back to transcoding",
+        ]),
+        ("1.0.6 (84)", [
+            "New movies and shows now reach the Home screen without a restart",
+        ]),
+        ("1.0.5 (83)", [
+            "Fixed videos failing to play on some home networks",
+        ]),
+        ("1.0.5 (82)", [
+            "Updated AetherEngine to 6.81.0",
+            "Autoplay no longer flashes black between episodes",
+        ]),
+        ("1.0.5 (81)", [
+            "Extras and special features now resume where you left off",
+            "Selecting a season pill now opens the season's detail page, not another carousel",
+            "Jump straight to a letter with the new A to Z bar in title-sorted libraries",
+            "Holding Up or Down in a library now keeps scrolling instead of losing focus",
+        ]),
+        ("1.0.5 (80)", [
+            "Updated AetherEngine to 6.32.0",
+            "Playback errors now say what went wrong instead of one generic message",
+            "Autoplay no longer skips an episode when the next one starts",
+            "Play Next and Dismiss on the Up Next page can now be focused and selected",
+            "Back on the Up Next page now returns to the video instead of closing the player",
+            "The Up Next countdown ring now animates as it counts down",
+        ]),
+        ("1.0.5 (79)", [
+            "New Input Test in Settings under About records what your remote actually sends",
+            "Home rows now follow the libraries you have pinned to Home on your Plex server",
+            "Your sidebar library order now sets the order Home draws its rows in",
+            "Losing the server now shows one message instead of a banner that shifted rows",
+            "Starting playback with the server unreachable now offers a retry",
+            "The collapsed sidebar no longer covers the top row of content or the search field",
+            "Moving up from the top row of search results now reaches the keyboard",
+            "Captions are now the same size Apple TV uses for its own player",
+            "A season's page no longer leads with the show's poster",
+            "Live TV guide groups now move up and down correctly",
+            "The Live TV guide is no longer padded down by the sidebar",
+            "Focused rows in the sidebar and Settings no longer leave a fading highlight",
+            "The Discover toggles now sit in their own group in Settings",
+        ]),
+        ("1.0.5 (78)", [
+            "A show's page now shows each season's poster, episode count and summary",
+            "The episode row now marks where each season starts",
+            "Selecting a season opens its own page, with only its episodes and extras",
+            "A season's page now leads with its poster",
+            "A caption placed left or right now sits at that edge instead of drifting in",
+            "Discover no longer hides loaded rows behind a No Content message",
+            "Changing your sidebar libraries now applies right away, with no reload prompt",
+        ]),
+        ("1.0.4 (77)", [
+            "Search now moves down from the keyboard into your results",
+            "Moving up from a row of results no longer skips the row above it",
+            "Search results scroll into view instead of sitting under the keyboard",
+            "Recent searches move left and right smoothly again",
+            "Search starts fresh each time you open the tab",
+            "Removed diagnostic logging that shipped in the last build",
+        ]),
+        ("1.0.4 (76)", [
+            "Fixed Search and Discover, where no button press did anything after opening them",
+            "The playback controls now hide on their own again after a few seconds",
+            "A title's Play button now shows the time left, matching its Continue Watching tile",
+            "The player's Description tab no longer floats the summary in the middle of the panel",
+            "Home row titles now come from your Plex server and appear in your language",
+            "Home now shows the rows you have promoted on your Plex server",
+            "Continue Watching and On Deck now show as one row instead of two",
+            "New Rows page in Settings under Home lets you hide Home rows",
+            "Live TV guide times are now correct for guides that set a time zone",
+            "Music can now move back to the sidebar with a left press",
+            "Updated AetherEngine to 6.5.5",
+        ]),
+        ("1.0.4 (75)", [
+            "Top Shelf artwork on the Apple TV Home screen now includes the title logo",
+            "Moving between the playback controls no longer skips the video",
+            "The controls stay open while an info popup is showing",
+            "Pressing Select opens the controls without pausing or resuming",
+            "Closing an info popup returns you to the button you opened it from",
+            "Fast forward and rewind now step down into the other direction",
+            "Menu now works every time inside popups and full screen pages",
+            "The player info panel no longer resizes while you are reading it",
+        ]),
+        ("1.0.4 (74)", [
+            "Testing remote control fixes. If this breaks for you, please install an older build and submit a bug. Thanks.",
+            "Updated AetherEngine to 6.4.0",
+            "Subtitles now match the text size, background box and position Apple TV uses for its own captions",
+            "Subtitles keep the styling the content asked for, including bold, italic, underline, colour and size",
+            "Captions a broadcaster places away from the bottom of the picture now appear where they were put",
+            "Subtitles lift clear of the playback controls while they are showing and drop back when they hide",
+            "The subtitle height adjustment is now remembered per title and per channel, like the delay",
+            "Marking an item as watched now updates the Play button instead of saying Resume",
+            "Marking an item as watched now updates Home and Continue Watching right away",
+            "Pausing now registers on your Plex server instead of showing as still playing",
+            "Music marks a song as a favorite only when you rate it above three stars",
+            "Swiping now moves between the buttons on a title's details page",
+            "Swiping the touch surface now skips back and forward in Live TV",
+            "Info popups on the details page now scroll with a swipe",
+            "New Input Diagnostics toggle in Settings helps track down remote issues",
+            "The player's INFO and cast panels now move between sections with a swipe",
+        ]),
+        ("1.0.4 (72)", [
+            "Updated AetherEngine to 6.1.3",
+            "The progress bar no longer jumps back after a seek on a slow server",
+            "Reaching the end of a movie or a show's last episode now closes the player",
+            "The player's INFO panel now opens on a Description tab with the title and summary",
+            "Leaving the player now fades to black while your TV switches display modes",
+            "Season rows now scroll, so shows with more than eight seasons are reachable",
+            "The Recent Rows and Discovery Rows settings hide those rows again",
+            "New Instant Resume setting in Playback, on by default. Turn it off and Continue Watching tiles open the preview like every other Home row instead of playing right away",
+        ]),
+        ("1.0.4 (71)", [
+            "Updated AetherEngine to 5.23.11",
+            "Playback starts and seeks more reliably",
+            "Fixed picture and colour problems on several kinds of file",
+            "Live TV is steadier and recovers on its own when a channel drops",
+            "Subtitles are more reliable, and external .sup files now load",
+            "The Play button on the remote starts or resumes whatever is focused",
+            "You can now set the skip length for a single Left or Right press in Playback settings",
+            "Trailers and extras now play reliably",
+        ]),
+        ("1.0.4 (69)", [
+            "New Content Filtering in Playback settings can mute strong language and skip scenes during playback, with per category controls and a quick toggle in the player",
+            "Language muting works on any title with subtitles, and scene skipping uses filter lists in the MCF or EDL format from a URL you provide, without ever changing your files",
+            "The backdrop that appears while paused now waits ten seconds instead of five, so you have more time to look at the paused frame",
+            "Pressing Back while the paused backdrop is showing now brings back the paused frame instead of closing the player",
+            "Fixed playback getting stuck after leaving the app and coming back, the video now picks up right where you left off",
+            "The player's INFO panel now responds to swipes on the remote, so you can move through and scroll its sections without clicking",
+            "Fixed Live TV channels on DVB tuners with cloud based guide data failing to start",
+            "Live TV streams no longer cut out after a few minutes because the server thought nobody was watching",
+            "The Live TV player now shows how far into the current program you are",
+            "The Live TV guide now loads program data as you scroll, so large channel lineups open faster",
+            "Fixed channel logos sometimes showing on the wrong channels while scrolling the Live TV guide",
+            "Teletext subtitles now start on the page used in your region",
+            "Fixed connecting to a Plex server failing on some home networks, with a retry and an unlink option if connecting still fails",
+        ]),
+        ("1.0.3 (67)", [
+            "Choosing forced subtitles now sticks: the next title no longer switches you to full captions",
+            "Redesigned Live TV guide with a full channel grid, program details, and instant playback",
+            "Show and movie pages opened from Top Shelf or Siri now match the pages you get inside the app",
+            "Removing an item from Continue Watching no longer leaves focus in the wrong place",
+            "The INFO panel in the player now shows the streaming mode for video, audio, and subtitles, so you can confirm Direct Play without checking the server dashboard",
+            "The player's INFO panel now has an Advanced tab with live playback stats like bitrate, frame rate, buffer, and network throughput",
+            "Updated AetherEngine to 5.8.4. Adds teletext subtitles and much smoother audio and video on broadcast Live TV channels, closed captions on more US broadcast and cable channels, faster startup on slower sources, fewer stalls when resuming after a pause, and a fix for rare freezes during 4K HDR playback",
+            "Tuning into a live channel mid-broadcast no longer shows a green flash or a channel that never starts, and switching between similar channels is faster",
+            "Interlaced broadcast channels now play with smoother motion using hardware deinterlacing",
+            "Videos in unusual formats that used to show a black screen now play using a software decoder",
+            "HDR Live TV channels no longer fail to start",
+            "The TV no longer drops to SDR and back when one Dolby Vision title starts after another",
+            "Skipping on a slow or stalling source no longer leaves the player hanging",
+            "Live TV subtitles now show broadcaster colours following your system caption settings, and rolling captions no longer flicker",
+            "New Delay and Height adjustments in the player's subtitle menu. Delay is remembered per movie, episode, and channel; height applies everywhere",
+            "The skip button now fills up as the auto skip counts down",
+            "In Live TV, the Menu button now closes an open menu or the controls one step at a time before leaving the channel",
+            "Redesigned the Add Source flow in Live TV to match the rest of the app, with choices named for what you have instead of technical terms",
+            "Fixed sources and servers on plain http addresses failing to connect",
+            "New optional Community Marker Database in Playback settings fills in missing intro, recap, and credits markers when your server has none, with a new Auto-Skip Recap option",
+            "Playing from a server that reaches you only through Plex Relay now works instead of failing, at a lower 480p quality the relay's limited bandwidth can sustain",
+            "Pressing Back while the Up Next screen is showing now returns you to the video instead of closing the player",
+            "A single left or right press now skips 30 seconds, and holding fast forwards or rewinds at increasing speed, the same way whether the controls are visible or not",
+            "Bringing up the player controls now places focus on the progress bar, so you can skip or scrub right away",
+        ]),
+        ("1.0.3 (66)", [
+            "Removing an item from Continue Watching is now instant and no longer clears your watch progress",
+            "New Go to Show option in the Continue Watching menu opens the show page right at your current episode",
+            "Watch from Beginning now actually starts playback from the beginning",
+            "Reorganized the long press menus on Home rows",
+            "Fixed old items reappearing at the far end of the Continue Watching row",
+        ]),
+        ("1.0.3 (65)", [
+            "Updated AetherEngine to 5.0.5. Fixes duplicate subtitles after rewinding, subtitle timing during fast skipping, and playback resuming on its own when skipping while paused",
+            "The changelog in Settings now shows the full release history",
+            "Security improvements for DreamCAST's online features",
+        ]),
+        ("1.0.3 (64)", [
+            "Continue Watching now stays up to date after you finish watching and when you return to the app",
+            "You can now pick any subtitle track, not just the first one for each language",
+        ]),
+        ("1.0.3 (63)", [
+            "Fixed duplicate subtitle lines stacking up after rewinding",
+            "DreamCAST now remembers your audio and subtitle choices, including forced subtitles, and applies them to the next thing you watch",
+            "Removed the audio and subtitle language settings. The player now learns your preference from what you pick",
+            "You can now swipe through the Home carousel",
+            "The ambient glow on Home now follows the featured artwork",
+            "Better diagnostics when playback fails",
+        ]),
+        ("1.0.3 (62)", [
+            "Major playback engine update (AetherEngine 5.0)",
+            "Releases are now also published on GitHub",
+        ]),
+        ("1.0.3 (61)", [
+            "Pressing Back in the sidebar now returns you to Home",
+            "The preview carousel now shows series info",
+            "Insights now works on TV episodes",
+        ]),
+        ("1.0.2 (59)", [
+            "Insights (work in progress): while watching, open Insights to see the cast and trivia for the current movie or show. Coverage and accuracy will keep improving",
+            "Redesigned the player controls: a cleaner glass control bar with subtitles, audio, info, and Up Next, plus smoother scrubbing with thumbnail previews",
+            "Redesigned the paused screen with full quality backdrop art and the title logo",
+            "The Apple TV top shelf now shows Continue Watching as full bleed artwork with the title logo",
+            "New Home hero that highlights trending movies and shows",
+            "Playback fixes: subtitles keep their selection when you change the audio track, trick play thumbnails line up with the right moment, and fast forward and rewind speeds are steadier",
+            "Bug fixes",
+        ]),
+        ("1.0.1 (56)", [
+            "Watchlist items you own now show proper artwork and a Play button",
+            "Playback now resumes correctly after leaving and returning to the app",
+            "Fixed subtitle language names in the track picker",
+            "Fixed the Home hero sometimes loading late",
+            "Refreshed the app icon",
+        ]),
+        ("1.0.0 (53)", [
+            "Fixed the Aether player not playing any content (black screen, no audio) for some users",
+        ]),
+        ("1.0.0 (52)", [
+            "Actor detail pages now work. Tap any cast member to see their bio and the movies and shows they're in",
+            "Skip Intro and Skip Credits markers now work in the Aether player",
+            "The Aether player now plays the next episode and updates Continue Watching when a show finishes",
+            "Fixed connecting to your Plex server when you're away from home",
+            "Updated AetherEngine to the latest version",
+            "Bug fixes",
+        ]),
+        ("1.0.0 (51)", [
+            "Subtitles now work in the Aether player, both text and image-based, styled to your system caption settings",
+            "More reliable sidebar, including a fix for it getting stuck after sign-in or changing libraries",
+            "Smoother first-time sign-in",
+            "Home hero is now shown by default",
+            "Improved library sorting",
+            "Bug fixes",
+        ]),
+        ("1.0.0 (50)", [
+            "Refactored most views to UIKit. Performance should be much better.",
+            "Added AetherEngine as a third video player option.",
+            "Bug fixes.",
+            "Live TV fixes coming soon!",
+        ]),
+        ("1.0.0 (48)", [
+            "Added Discover and Watchlist tabs",
+            "Added Music browsing",
+            "Added pre-play audio and subtitle track pickers",
+            "Added a Resume or Restart prompt setting (off by default)",
+            "A bare touchpad tap surfaces the timeline overlay",
+            "Fixed focus on player error screens",
+            "Auto-transcodes codecs Apple TV can't decode (MPEG-2, VC-1, VP9, AV1)",
+            "Fixed a freeze when resuming after a paused scrub",
+            "Fixed audio flutter on AAC, FLAC, and PCM tracks",
+            "Fixed 401 errors on multi-server Plex accounts",
+            "Thanks to @rrgomes for PR contributions in this release",
+        ]),
+        ("1.0.0 (47)", [
+            "New Discover page: browse Popular, Top Rated, Now Playing, and Upcoming content from TMDB",
+            "Plex Watchlist integration: saved items appear on Home and you can add or remove from anywhere",
+            "Hero bookmark button now toggles your Plex Watchlist. Mark Watched moved to the detail page",
+        ]),
+        ("1.0.0 (46)", [
+            "Fixed watched episodes not automatically playing",
+            "Fixed some animation jank",
+            "Updated heroes to be more Apple TV+ style. Not perfect yet",
+            "Fixed library sorting",
+        ]),
+        ("1.0.0 (44)", [
+            "Built a completely custom video player using ffmpeg and internal tvOS tools. The end goal is playback as smooth as Infuse. It's working well in all my tests, but please open any issues if you experience them",
+            "Re-styled many GUI elements to match Apple TV+ style and functionality",
+            "Apple's built-in player (AVPlayer) can be used if desired. Toggle in settings",
+            "Currently re-working the music library style to match the Apple Music app, with functionality to match PlexAmp. It's a work in progress but wanted to get something out",
+        ]),
+        ("1.0.0 (43)", [
+            "Refined the GUI to be more Apple TV+ style",
+            "Removed MPVKit. Defaulting to AVPlayer while the custom player is in development",
+        ]),
+        ("1.0.0 (40)", [
+            "Fun depth effects on posters, because why not",
+            "Redesigned season and episode navigation for TV shows",
+            "Sort libraries by title, date added, rating, and more",
+            "Option to hide recently added from library views",
+            "Smoother video playback when Match Content is off",
+            "Continuing Dolby Vision improvements",
+            "General performance and stability improvements",
+        ]),
+        ("1.0.0 (38)", [
+            "Faster video startup",
+            "Default sizing is slightly larger",
+            "Display Size setting now affects all sizes",
+            "Improved Dolby Vision support for more video formats",
+            "Playback now integrates with Apple's Now Playing for control from other Apple devices",
+            "Scroll down an episode details page to get to Seasons and episode list",
+        ]),
+        ("1.0.0 (37)", [
+            "You can now save your PIN for Plex Home profiles",
+            "Live TV is more reliable with automatic stream recovery",
+            "Support for more controller types",
+            "PIP now works in Live TV",
+            "Better multiview handling in Live TV",
+            "Live TV scrubbing controls",
+            "Continuing efforts to fix audio buffering on HomePods",
+            "Only show Post Video screen on tv shows with a next up episode",
+        ]),
+        ("1.0.0 (36)", [
+            "Trying an experimental Dolby Vision player; If DV does not work, or works well, let me know",
+            "Added Plex Home Account support. Enable it in settings",
+            "Added shuffle buttons to Seasons and Series",
+            "Library sections now appear individually on Home - Long-press libraries to toggle Home visibility",
+            "Fixed navigation bugs",
+            "Fixed some Add Live TV GUI issues",
+            "Fixed some Live TV endpoint issues and added more error logging to pinpoint more",
+            "Fixed audio not stopping",
+            "Added Changelog popup and section in settings",
+            "Removed percentage from Post Video summary",
+            "Added background to post video summary"
+        ]),
+    ]
+
+    static func features(for version: String) -> [String]? {
+        changelogs.first(where: { $0.version == version })?.features
+    }
+}

@@ -8,7 +8,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 POSTERS, ICON, OUT = sys.argv[1:4]
 SIZES = {"universal": (5244, 2950), "header": (3840, 1646), "search": (3840, 2560)}
-NAME, TAGLINE = "Rivulet", "simply your media"
+NAME, TAGLINE = "DreamCAST", "simply your media"
 BG = "#070B1E"
 FONT = "/Library/Fonts/SF-Pro-Display-Bold.otf"
 FONT_TEXT = "/Library/Fonts/SF-Pro-Display-Light.otf"

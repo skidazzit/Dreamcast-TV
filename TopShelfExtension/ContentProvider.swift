@@ -11,7 +11,7 @@
 import TVServices
 import os.log
 
-private let logger = Logger(subsystem: "com.gstudios.rivulet.TopShelfExtension", category: "ContentProvider")
+private let logger = Logger(subsystem: "com.gstudios.dreamcast.TopShelfExtension", category: "ContentProvider")
 
 class ContentProvider: TVTopShelfContentProvider {
 
@@ -69,8 +69,8 @@ class ContentProvider: TVTopShelfContentProvider {
             }
 
             // Play resumes the item; Select / More Info opens its detail.
-            guard let playURL = RivuletLink(.play, ratingKey: item.ratingKey, server: item.serverIdentifier).url,
-                  let detailURL = RivuletLink(.detail, ratingKey: item.ratingKey, server: item.serverIdentifier).url
+            guard let playURL = DreamCASTLink(.play, ratingKey: item.ratingKey, server: item.serverIdentifier).url,
+                  let detailURL = DreamCASTLink(.detail, ratingKey: item.ratingKey, server: item.serverIdentifier).url
             else { return nil }
             cItem.playAction = TVTopShelfAction(url: playURL)
             cItem.displayAction = TVTopShelfAction(url: detailURL)
@@ -90,8 +90,8 @@ class ContentProvider: TVTopShelfContentProvider {
 
     /// A poster tile for the default sectioned row, the way Plex's Top Shelf looks.
     private func posterItem(_ item: TopShelfItem, showsProgress: Bool) -> TVTopShelfSectionedItem? {
-        guard let playURL = RivuletLink(.play, ratingKey: item.ratingKey, server: item.serverIdentifier).url,
-              let detailURL = RivuletLink(.detail, ratingKey: item.ratingKey, server: item.serverIdentifier).url
+        guard let playURL = DreamCASTLink(.play, ratingKey: item.ratingKey, server: item.serverIdentifier).url,
+              let detailURL = DreamCASTLink(.detail, ratingKey: item.ratingKey, server: item.serverIdentifier).url
         else { return nil }
         let tile = TVTopShelfSectionedItem(identifier: item.ratingKey)
         tile.imageShape = .poster

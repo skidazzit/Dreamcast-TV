@@ -7,15 +7,15 @@ U=$1; RAW=${2:A}; shift 2; ROOT=${0:A:h}/../..
 SERVER=${PLEX_SERVER:-http://192.168.1.140:32410}; LIVE=http://$(ipconfig getifaddr en0):8765
 DETAIL=${DETAIL_KEY:-117} ALBUM=${ALBUM_KEY:-217}
 # Every other server on the account stays out of the shots.
-HIDE=$(curl -s "https://plex.tv/api/v2/resources?X-Plex-Token=$PLEX_TOKEN&X-Plex-Client-Identifier=rivulet-shots" \
+HIDE=$(curl -s "https://plex.tv/api/v2/resources?X-Plex-Token=$PLEX_TOKEN&X-Plex-Client-Identifier=dreamcast-shots" \
   -H Accept:application/json | python3 -c "import json,sys;print('('+','.join(r['clientIdentifier'] for r in json.load(sys.stdin) if 'server' in r['provides'])+')')")
 ARGS=(-screenshotToken $PLEX_TOKEN -screenshotServer $SERVER -screenshotLiveTV $LIVE -plexDisabledServers $HIDE)
 mkdir -p $RAW
 
 shot() {  # shot <name> <wait> [ENV=value ...]
   local name=$1 wait=$2; shift 2
-  xcrun simctl terminate $U com.gstudios.rivulet >/dev/null 2>&1
-  env ${@/#/SIMCTL_CHILD_} xcrun simctl launch $U com.gstudios.rivulet $ARGS >/dev/null
+  xcrun simctl terminate $U com.gstudios.dreamcast >/dev/null 2>&1
+  env ${@/#/SIMCTL_CHILD_} xcrun simctl launch $U com.gstudios.dreamcast $ARGS >/dev/null
   sleep $wait
   xcrun simctl io $U screenshot --type=png $RAW/$name.png >/dev/null 2>&1 && echo $RAW/$name.png
 }
@@ -24,23 +24,23 @@ WANT=($@)
 
 # The hero pages on its own; 28 s lands on The Saltwater Hours.
 want home && shot home 28
-want rows && shot rows 28 RIVULET_FOCUS_MOVES=down,down RIVULET_FOCUS_DELAY=12
-want detail && shot detail 20 RIVULET_OPEN_DETAIL=$DETAIL
-want music && shot music 20 RIVULET_OPEN_LIBRARY=Music RIVULET_MUSIC_OPEN=album:$ALBUM
-want music && shot musiclibrary 18 RIVULET_OPEN_LIBRARY=Music
-want music && shot nowplaying 25 RIVULET_OPEN_LIBRARY=Music RIVULET_MUSIC_OPEN=play:$ALBUM
-want whatson && shot whatson 25 RIVULET_OPEN_LIBRARY="Live TV"
-want multiview && shot multiview 40 RIVULET_OPEN_LIBRARY="Live TV" RIVULET_MULTIVIEW="Arena Sports,Wild Earth"
+want rows && shot rows 28 DREAMCAST_FOCUS_MOVES=down,down DREAMCAST_FOCUS_DELAY=12
+want detail && shot detail 20 DREAMCAST_OPEN_DETAIL=$DETAIL
+want music && shot music 20 DREAMCAST_OPEN_LIBRARY=Music DREAMCAST_MUSIC_OPEN=album:$ALBUM
+want music && shot musiclibrary 18 DREAMCAST_OPEN_LIBRARY=Music
+want music && shot nowplaying 25 DREAMCAST_OPEN_LIBRARY=Music DREAMCAST_MUSIC_OPEN=play:$ALBUM
+want whatson && shot whatson 25 DREAMCAST_OPEN_LIBRARY="Live TV"
+want multiview && shot multiview 40 DREAMCAST_OPEN_LIBRARY="Live TV" DREAMCAST_MULTIVIEW="Arena Sports,Wild Earth"
 # Playback moves the title's resume point; put it back for the next run.
-INS=(RIVULET_AUTOPLAY=1 RIVULET_AUTOPLAY_KEY=$DETAIL RIVULET_AUTOPLAY_DURATION=40 RIVULET_AUTOPLAY_CHROME=1
-     RIVULET_AUTOPLAY_PANE=insights RIVULET_AUTOPLAY_TRIVIA=${0:A:h}/demo/trivia.json)
-want insights && shot insights 18 $INS && shot cast 20 $INS RIVULET_AUTOPLAY_MOVES=right,right
+INS=(DREAMCAST_AUTOPLAY=1 DREAMCAST_AUTOPLAY_KEY=$DETAIL DREAMCAST_AUTOPLAY_DURATION=40 DREAMCAST_AUTOPLAY_CHROME=1
+     DREAMCAST_AUTOPLAY_PANE=insights DREAMCAST_AUTOPLAY_TRIVIA=${0:A:h}/demo/trivia.json)
+want insights && shot insights 18 $INS && shot cast 20 $INS DREAMCAST_AUTOPLAY_MOVES=right,right
 want insights && curl -s -X PUT "$SERVER/:/progress?key=$DETAIL&identifier=com.plexapp.plugins.library&time=4224000&state=stopped&X-Plex-Token=$PLEX_TOKEN"
 if want setup; then  # a fresh install with nothing signed in
-  APP=$(xcrun simctl get_app_container $U com.gstudios.rivulet app)
-  cp -R $APP /tmp/rivulet-shots.app && xcrun simctl uninstall $U com.gstudios.rivulet && xcrun simctl install $U /tmp/rivulet-shots.app
-  rm -rf /tmp/rivulet-shots.app
-  xcrun simctl launch $U com.gstudios.rivulet >/dev/null; sleep 12
+  APP=$(xcrun simctl get_app_container $U com.gstudios.dreamcast app)
+  cp -R $APP /tmp/dreamcast-shots.app && xcrun simctl uninstall $U com.gstudios.dreamcast && xcrun simctl install $U /tmp/dreamcast-shots.app
+  rm -rf /tmp/dreamcast-shots.app
+  xcrun simctl launch $U com.gstudios.dreamcast >/dev/null; sleep 12
   xcrun simctl io $U screenshot --type=png $RAW/setup.png >/dev/null 2>&1 && echo $RAW/setup.png
 fi
 

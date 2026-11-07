@@ -138,11 +138,11 @@ The iOS app follows the Apple TV app and should have all the features one needs.
 Requires Xcode 27. Copy the secrets template once (placeholder values are fine), then open the project:
 
 ```bash
-cp RivuletCore/Config/Secrets.swift.template RivuletCore/Config/Secrets.swift
-open Rivulet.xcodeproj
+cp DreamCASTCore/Config/Secrets.swift.template DreamCASTCore/Config/Secrets.swift
+open DreamCAST.xcodeproj
 ```
 
-`Rivulet` is the tvOS scheme and `Rivulet iOS` is the iPhone and iPad scheme. `Rivulet/` holds the tvOS app, `RivuletiOS/` the iOS app, and `RivuletCore/` the code both share. See `CLAUDE.md` for the architecture.
+`DreamCAST` is the tvOS scheme and `DreamCAST iOS` is the iPhone and iPad scheme. `DreamCAST/` holds the tvOS app, `DreamCASTiOS/` the iOS app, and `DreamCASTCore/` the code both share. See `CLAUDE.md` for the architecture.
 <br></br>
 
 ## Contributing
