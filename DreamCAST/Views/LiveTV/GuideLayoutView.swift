@@ -478,6 +478,7 @@ struct GuideLayoutView: View {
         if keepPlayingInGuide {
             vc.onMinimize = { session in
                 miniSession = session
+                focusGuideOnPlayingChannel(session.channel)
             }
         }
         vc.onOpenMultiview = { session in
@@ -489,10 +490,7 @@ struct GuideLayoutView: View {
         vc.onDismiss = { lastChannel in
             // The viewer may have changed channels in the player; land on the
             // one that was on screen, at the programme airing now.
-            if !channels.contains(where: { $0.id == lastChannel.id }) {
-                selectedGroup = nil
-            }
-            gridFocusRequest = EPGFocusRequest(channelId: lastChannel.id, token: UUID())
+            focusGuideOnPlayingChannel(lastChannel)
         }
         top.present(vc, animated: animated)
     }
@@ -565,6 +563,9 @@ struct GuideLayoutView: View {
     private func startLaunchMiniPlayer(channelID: String) async {
         guard miniSession == nil,
               let channel = sourceChannels.first(where: { $0.id == channelID }) else { return }
+        // Put the guide on the same channel as startup playback, including its
+        // playlist group. The focus token scrolls the UIKit grid to its row.
+        focusGuideOnPlayingChannel(channel)
         let player = AetherPlayer()
         let keepalive = PlexLiveTimelineKeepalive()
         let resolved: URL
@@ -611,6 +612,22 @@ struct GuideLayoutView: View {
             focusedProgram = dataStore.getCurrentProgram(for: first)
                 ?? dataStore.epg[first.id]?.first { $0.endTime > timelineStart }
         }
+    }
+
+    /// Keep the category tab, selected programme, and grid focus in sync with
+    /// the channel playing in the corner or returning from full screen.
+    private func focusGuideOnPlayingChannel(_ channel: UnifiedChannel) {
+        let group = channel.groupTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Hidden groups stay hidden. All Channels remains the safe fallback.
+        if let group, !group.isEmpty, groupTitles.contains(group) {
+            selectedGroup = group
+        } else {
+            selectedGroup = nil
+        }
+        focusedChannel = channel
+        focusedProgram = dataStore.getCurrentProgram(for: channel)
+            ?? dataStore.epg[channel.id]?.first { $0.endTime > timelineStart }
+        gridFocusRequest = EPGFocusRequest(channelId: channel.id, token: UUID())
     }
 
     /// A guide entry starts on the last watched channel, if that source is visible.
