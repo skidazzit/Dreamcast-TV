@@ -18,7 +18,7 @@ enum StartupTimer {
     /// `DreamCASTApp.init`'s body, so first touch would bill them to +0 ms.
     nonisolated private static let launchUptime = processStartUptime()
 
-    private static let log = Logger(subsystem: "com.bain.DreamCAST", category: "Startup")
+    nonisolated private static let log = Logger(subsystem: "com.bain.DreamCAST", category: "Startup")
 
     /// Process start expressed on the `systemUptime` clock. Falls back to "now"
     /// if the sysctl fails, which just restores the old first-touch behaviour.
