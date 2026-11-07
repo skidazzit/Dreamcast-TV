@@ -641,7 +641,7 @@ struct TVSidebarView: View {
     // MARK: - Tab Content
 
     /// Launch only, never when returning to the guide or bringing the app forward.
-    /// Wait for the saved lineup; no playlist or EPG fetch is needed here.
+    /// Finish the startup playlist and EPG fetch before opening the guide.
     private func scheduleLaunchLiveTVAutoplay() {
         guard !didScheduleLiveTVAutoplay,
               SettingsStore.bool("liveTVAutoPlayLastWatched", default: false),
@@ -651,8 +651,9 @@ struct TVSidebarView: View {
               liveTVDataStore.channels.contains(where: { $0.id == lastId }) else { return }
         didScheduleLiveTVAutoplay = true
         Task { @MainActor in
-            // Give the root shell time to mount before presenting a full-screen player.
-            try? await Task.sleep(for: .seconds(2))
+            // Share the existing startup fetch when one is running. Do not
+            // open a guide with channels but an empty or half-loaded EPG.
+            await liveTVDataStore.prepareForStartupAutoplay()
             guard !Task.isCancelled, setupComplete,
                   !isAwaitingProfileSelection, !showProfilePicker, !showWhatsNew,
                   let channel = liveTVDataStore.channels.first(where: { $0.id == lastId }) else { return }
