@@ -277,6 +277,22 @@ struct EPGGuide: UIViewRepresentable {
             }
         }
         uiView.setClock(now)
+        // The first Down press from the category bar must enter the currently
+        // playing channel, not the first visible channel in the grid.
+        let playingChannelID: String? = {
+            guard let channel = miniSession?.channel,
+                  selectedCategory == channel.groupTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+                    || (selectedCategory == nil && !categoryTitles.contains(channel.groupTitle ?? ""))
+            else { return nil }
+            return channel.id
+        }()
+        let requestedID = playingChannelID ?? focusRequest?.channelId
+        let preferredDownChannelID = requestedID.flatMap { id in
+            channels.contains(where: { $0.id == id }) ? id : nil
+        }
+        uiView.setPreferredDownChannel(preferredDownChannelID) { [weak coordinator = context.coordinator] id in
+            coordinator?.focusLiveProgramme(channelId: id)
+        }
         if let request = focusRequest, request != context.coordinator.handledFocusRequest {
             context.coordinator.handledFocusRequest = request
             context.coordinator.focusLiveProgramme(channelId: request.channelId)
@@ -761,6 +777,8 @@ final class EPGContainerView: UIView {
     private weak var pendingGridFocusTarget: UIView?
     private weak var pendingCategoryFocusTarget: UIView?
     private var pendingMiniPlayerFocus = false
+    private var preferredDownChannelID: String?
+    private var focusPreferredDownChannel: ((String) -> Void)?
     private var gridUpSwipeBinding: DirectionalInputBinding?
     /// The channel still playing after Back, in the corner (issue #318).
     private let miniPlayer = LiveMiniPlayerView()
@@ -842,6 +860,11 @@ final class EPGContainerView: UIView {
         rightFade.startPoint = CGPoint(x: 0, y: 0.5)
         rightFade.endPoint = CGPoint(x: 1, y: 0.5)
         layer.addSublayer(rightFade)
+    }
+
+    func setPreferredDownChannel(_ id: String?, focus: @escaping (String) -> Void) {
+        preferredDownChannelID = id
+        focusPreferredDownChannel = focus
     }
 
     func configureCategories(
@@ -950,6 +973,10 @@ final class EPGContainerView: UIView {
     /// focus delegate is ignored by UIKit because an update is already active.
     private func moveFocusIntoGrid() {
         guard pendingGridFocusTarget == nil, let cv = collectionView else { return }
+        if let id = preferredDownChannelID, let focusPreferredDownChannel {
+            focusPreferredDownChannel(id)
+            return
+        }
         cv.layoutIfNeeded()
         pendingGridFocusTarget = firstVisibleProgramCell(in: cv) ?? cv
 
