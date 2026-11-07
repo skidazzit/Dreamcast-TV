@@ -1,7 +1,7 @@
 name: iOS Build
 
 # Closes the platform-boundary CI gap: without this, no automation compiles
-# the "Rivulet iOS" scheme between ios-v* release tags, so a RivuletCore
+# the "DreamCAST iOS" scheme between ios-v* release tags, so a DreamCASTCore
 # change that only breaks the iOS target stays invisible until release
 # archive time. Lint cannot catch it (it checks #if patterns, not type
 # references) and the tvOS build stays green.
@@ -12,17 +12,17 @@ name: iOS Build
 on:
   pull_request:
     paths:
-      - 'RivuletCore/**'
-      - 'RivuletiOS/**'
-      - 'Rivulet.xcodeproj/**'
+      - 'DreamCASTCore/**'
+      - 'DreamCASTiOS/**'
+      - 'DreamCAST.xcodeproj/**'
       - 'codemagic.yaml'
       - '.github/workflows/build-ios.yml'
   push:
     branches: [main]
     paths:
-      - 'RivuletCore/**'
-      - 'RivuletiOS/**'
-      - 'Rivulet.xcodeproj/**'
+      - 'DreamCASTCore/**'
+      - 'DreamCASTiOS/**'
+      - 'DreamCAST.xcodeproj/**'
       - 'codemagic.yaml'
       - '.github/workflows/build-ios.yml'
 
@@ -48,7 +48,7 @@ jobs:
 
       # Both app targets read Secrets.swift; placeholders compile fine.
       - name: Generate placeholder Secrets.swift
-        run: cp RivuletCore/Config/Secrets.swift.template RivuletCore/Config/Secrets.swift
+        run: cp DreamCASTCore/Config/Secrets.swift.template DreamCASTCore/Config/Secrets.swift
 
       # AetherEngine pulls FFmpeg as binary artifacts — the checkout is the
       # slow part, so cache it keyed on the pin.
@@ -56,18 +56,18 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: SourcePackages
-          key: spm-${{ runner.os }}-${{ hashFiles('Rivulet.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          key: spm-${{ runner.os }}-${{ hashFiles('DreamCAST.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
           restore-keys: spm-${{ runner.os }}-
 
       # ARCHS=arm64: a generic simulator destination otherwise builds the
       # x86_64 slice too, and LibDovi's tvOS-simulator xcframework carries no
       # x86_64 dovi_* symbols — the fat link fails. Runners are arm64 anyway.
-      - name: Build Rivulet iOS (Debug, simulator)
+      - name: Build DreamCAST iOS (Debug, simulator)
         run: |
           set -o pipefail
           xcodebuild \
-            -project Rivulet.xcodeproj \
-            -scheme "Rivulet iOS" \
+            -project DreamCAST.xcodeproj \
+            -scheme "DreamCAST iOS" \
             -configuration Debug \
             -destination 'generic/platform=iOS Simulator' \
             -clonedSourcePackagesDirPath SourcePackages \

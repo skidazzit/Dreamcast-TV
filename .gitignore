@@ -62,7 +62,7 @@ worktrees/
 
 
 # Secrets (do not commit)
-RivuletCore/Config/Secrets.swift
+DreamCASTCore/Config/Secrets.swift
 .env
 .env.*
 .dev.vars
@@ -96,7 +96,7 @@ Docs/TEST_CONTENT_RATING_KEYS.md
 .sentryclirc
 
 # Design sources and icon exports — the shipping art lives in
-# Rivulet/Assets.xcassets and Branding/. Everything else is scratch.
+# DreamCAST/Assets.xcassets and Branding/. Everything else is scratch.
 *.afdesign
 *.afphoto
 *.sketch

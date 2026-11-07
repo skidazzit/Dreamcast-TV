@@ -2,23 +2,23 @@ name: tvOS Build (shared code)
 
 # The mirror of build-ios.yml, scoped narrower: the maintainer's daily loop
 # builds tvOS constantly, so tvOS-only changes don't need a CI compile. The
-# hole this closes is a RivuletCore or project-file change made from the iOS
+# hole this closes is a DreamCASTCore or project-file change made from the iOS
 # side that breaks the tvOS target — the one direction local habit doesn't
-# cover. RivuletiOS/ is deliberately absent from the paths: it never compiles
+# cover. DreamCASTiOS/ is deliberately absent from the paths: it never compiles
 # into the tvOS app.
 
 on:
   pull_request:
     paths:
-      - 'RivuletCore/**'
-      - 'Rivulet.xcodeproj/**'
+      - 'DreamCASTCore/**'
+      - 'DreamCAST.xcodeproj/**'
       - 'codemagic.yaml'
       - '.github/workflows/build-tvos-core.yml'
   push:
     branches: [main]
     paths:
-      - 'RivuletCore/**'
-      - 'Rivulet.xcodeproj/**'
+      - 'DreamCASTCore/**'
+      - 'DreamCAST.xcodeproj/**'
       - 'codemagic.yaml'
       - '.github/workflows/build-tvos-core.yml'
 
@@ -43,24 +43,24 @@ jobs:
           xcodebuild -version
 
       - name: Generate placeholder Secrets.swift
-        run: cp RivuletCore/Config/Secrets.swift.template RivuletCore/Config/Secrets.swift
+        run: cp DreamCASTCore/Config/Secrets.swift.template DreamCASTCore/Config/Secrets.swift
 
       - name: Cache Swift packages
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: SourcePackages
-          key: spm-${{ runner.os }}-${{ hashFiles('Rivulet.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          key: spm-${{ runner.os }}-${{ hashFiles('DreamCAST.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
           restore-keys: spm-${{ runner.os }}-
 
       # ARCHS=arm64: a generic simulator destination otherwise builds the
       # x86_64 slice too, and LibDovi's tvOS-simulator xcframework carries no
       # x86_64 dovi_* symbols — the fat link fails. Runners are arm64 anyway.
-      - name: Build Rivulet (Debug, simulator)
+      - name: Build DreamCAST (Debug, simulator)
         run: |
           set -o pipefail
           xcodebuild \
-            -project Rivulet.xcodeproj \
-            -scheme "Rivulet" \
+            -project DreamCAST.xcodeproj \
+            -scheme "DreamCAST" \
             -configuration Debug \
             -destination 'generic/platform=tvOS Simulator' \
             -clonedSourcePackagesDirPath SourcePackages \

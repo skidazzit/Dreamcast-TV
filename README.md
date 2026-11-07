@@ -33,13 +33,13 @@ The original author, code history, and PolyForm Noncommercial license are retain
 
 <br></br>
 
-**Rivulet is built for Apple TV first. I care a lot about its speed, performance, and simplicity in tvOS.**
+**DreamCAST TV is built for Apple TV first, with speed and simplicity at its core.**
 
 **If you like it, please share it around.**
 
 This project is opinionated. All suggestions and ideas are always welcome, but please don’t be offended if I decline an enhancement or feature suggestion. 
 
-_A camel is a horse designed by a committee. I don’t want Rivulet to be a camel._
+_A camel is a horse designed by a committee. DreamCAST keeps things simple._
 
 
 ## Why this exists
@@ -52,7 +52,7 @@ I began this project in Decemeber 2025. At the time there was quite a lack of Pl
 
 ## Live TV
 
-Rivulet works with several kinds of Live TV source. You don't need a Plex, Jellyfin, or Emby server. Add just a Live TV source and the app opens straight to Live TV.
+DreamCAST works with several kinds of Live TV source. You don't need a Plex, Jellyfin, or Emby server. Add just a Live TV source and the app opens straight to Live TV.
 
 - **What's On**: what's airing now, what starts soon, and a For You row that learns what you watch.
 - **Guide**: standard guide layout if you want.
@@ -87,7 +87,7 @@ Playback runs on [AetherEngine](https://github.com/superuser404notfound/AetherEn
 - **Containers**: MKV, MP4, WebM, MPEG-TS, AVI, WMV, OGG, FLV, and more.
 - **Video**: H.264 and HEVC (including 10-bit) decode in hardware. AV1, VP9, MPEG-2, VC-1, MPEG-4 Part 2, and almost anything else FFmpeg can decode play in software. Interlaced broadcasts are deinterlaced on the GPU.
 - **HDR**: HDR10, HDR10+, HLG, and Dolby Vision profiles 5, 8.1, and 8.4. On a Dolby Vision TV, Profile 7 plays as 8.1. Without one, it plays its HDR10 base layer.
-- **Audio**: Apple TV can't bitstream audio, so everything goes through tvOS. AAC, AC3, E-AC3, FLAC, and ALAC are handed to tvOS as-is, and it outputs them the same way it does in Apple's own apps. Atmos in E-AC3 reaches an Atmos receiver as Dolby MAT, and everything else goes out as multichannel PCM or Dolby Digital, depending on your Apple TV audio settings. TrueHD, DTS, DTS-HD MA, Opus, Vorbis, and PCM are decoded by Rivulet first and reach tvOS as lossless multichannel audio. TrueHD and DTS-HD MA stay lossless at up to 7.1, but your receiver will show PCM instead of the original format.
+- **Audio**: Apple TV can't bitstream audio, so everything goes through tvOS. AAC, AC3, E-AC3, FLAC, and ALAC are handed to tvOS as-is, and it outputs them the same way it does in Apple's own apps. Atmos in E-AC3 reaches an Atmos receiver as Dolby MAT, and everything else goes out as multichannel PCM or Dolby Digital, depending on your Apple TV audio settings. TrueHD, DTS, DTS-HD MA, Opus, Vorbis, and PCM are decoded by DreamCAST first and reach tvOS as lossless multichannel audio. TrueHD and DTS-HD MA stay lossless at up to 7.1, but your receiver will show PCM instead of the original format.
 - **Subtitles**: SRT, ASS/SSA, and WebVTT, plus image subtitles (PGS, DVB, DVD/VobSub), CEA-608 closed captions, DVB teletext, and external subtitle files from your server. ASS/SSA renders through libass with its original styling and embedded fonts.
 - **Stream quality**: direct play by default, or pick a transcode quality when bandwidth is tight.
 - **Content filtering** (work in progress): mute language and skip scenes on your device, from the title's subtitles or an imported EDL list. The file is never touched.
@@ -124,11 +124,11 @@ The iOS app follows the Apple TV app and should have all the features one needs.
 ---
 <br></br>
 > [!IMPORTANT]
-> ## Rivulet is free, but not for sale.
+> ## DreamCAST TV is free, but not for sale.
 >
 > Licensed under [PolyForm Noncommercial 1.0.0](LICENSE). You may **clone it, run it, modify it, share it, and contribute back** for personal, educational, research, hobby, or any other noncommercial use.
 >
-> You may **not** sell Rivulet, charge for access to it, or bundle it (or any derivative of it) into a paid app, product, or service. **Anything derived from this code inherits the same restriction.** I'd rather give this away than watch someone else charge for it.
+> You may **not** sell DreamCAST TV, charge for access to it, or bundle it (or any derivative of it) into a paid app, product, or service. **Anything derived from the original Rivulet code inherits the same restriction.**
 
 ---
 <br></br>

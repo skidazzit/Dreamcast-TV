@@ -1,7 +1,7 @@
-# SwiftLint for Rivulet.
+# SwiftLint for DreamCAST.
 #
 # Every stock rule is OFF. `only_rules: [custom_rules]` means SwiftLint runs as a
-# regex engine for Rivulet's own architectural rules and nothing else. It has no
+# regex engine for DreamCAST's own architectural rules and nothing else. It has no
 # opinion here about force casts, line length, or naming.
 #
 # Why no stock rules: a full run of the default set produced 129 violations and
@@ -13,9 +13,9 @@
 # not to suppress the rule.
 
 excluded:
-  - RivuletCore/OpenSourceLicenses.swift   # license text, not code
-  - RivuletCore/Config/Secrets.swift       # generated in CI
-  - RivuletTests/Fixtures
+  - DreamCASTCore/OpenSourceLicenses.swift   # license text, not code
+  - DreamCASTCore/Config/Secrets.swift       # generated in CI
+  - DreamCASTTests/Fixtures
 
 only_rules:
   - custom_rules
@@ -43,23 +43,23 @@ custom_rules:
 
   platform_conditional_in_shared_code:
     name: "#if os() in shared code"
-    # RivuletCore compiles into BOTH app targets; the no-conditionals rule is
+    # DreamCASTCore compiles into BOTH app targets; the no-conditionals rule is
     # the whole platform boundary. Anchored to line start because a real
     # directive begins its line, while comments in shared files legitimately
     # DISCUSS `#if os(...)` mid-sentence when documenting why a value is
     # host-injected instead. (match_kinds is avoided on purpose: wrong kind
     # names silently disable a custom rule, verified with probe files.)
-    included: ".*RivuletCore/.*"
+    included: ".*DreamCASTCore/.*"
     regex: "^\\s*#(if|elseif)[^\\n]*\\bos\\s*\\("
-    message: "Shared code carries no platform conditionals. Lift the platform-specific part into Rivulet/ or RivuletiOS/, or inject it from the host at launch (CLAUDE.md, Platform Boundary)."
+    message: "Shared code carries no platform conditionals. Lift the platform-specific part into DreamCAST/ or DreamCASTiOS/, or inject it from the host at launch (CLAUDE.md, Platform Boundary)."
     severity: error
 
   tvos_context_menu_is_dead:
     name: "UIKit context menus do not work on tvOS 26"
     # tvOS only. Context menus work fine on iOS 26, so this must not fire on
-    # RivuletiOS. Matched as a substring rather than an anchored path so the
+    # DreamCASTiOS. Matched as a substring rather than an anchored path so the
     # exclusion holds whether SwiftLint reports relative or absolute paths.
-    excluded: ".*RivuletiOS/.*"
+    excluded: ".*DreamCASTiOS/.*"
     regex: "UIContextMenuInteraction|contextMenuConfigurationForItemsAt"
     match_kinds: [identifier, typeidentifier]
     message: "Dead on tvOS 26. Use a long-press plus TileMenuPopupViewController."
@@ -71,7 +71,7 @@ custom_rules:
     # catalog. Wrap it in String(localized:), or pass it to a funnel that takes
     # String.LocalizationValue (SettingsRowItem, TileMenuAction, ...). Server
     # text is assigned from variables, so it never matches.
-    included: ".*/Rivulet/Views/.*\\.swift"
+    included: ".*/DreamCAST/Views/.*\\.swift"
     excluded: ".*/Views/Player/AVKitScrubProbe\\.swift"
     regex: "(\\.(text|title|placeholder|accessibilityLabel) = |setTitle\\(|UIAlert(Controller|Action)\\(title: )\"[A-Z]"
     message: "UI text must be localizable: String(localized: \"...\") or a LocalizationValue funnel (issue 457)."

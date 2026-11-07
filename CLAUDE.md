@@ -34,7 +34,7 @@ The video player is **AetherPlayer** — an adapter around AetherEngine (FFmpeg 
 - **Platform**: tvOS 26+ (Apple TV)
 - **Language**: Swift 6
 - **UI Framework**: UIKit for the primary surfaces (see above); SwiftUI for the rest
-- **Video Player**: AetherPlayer for VOD and Live TV; AVPlayer only for the `hls` route (server transcode, primary-when-no-direct-URL or Aether fallback). See `Docs/RIVULET_PLAYER.md`.
+- **Video Player**: AetherPlayer for VOD and Live TV; AVPlayer only for the `hls` route (server transcode, primary-when-no-direct-URL or Aether fallback). See `Docs/DREAMCAST_PLAYER.md`.
 - **AetherEngine**: consumed as an **upstream** SwiftPM dependency (`superuser404notfound/AetherEngine`), pinned `exactVersion` (7.57.0), with none of its optional package traits enabled. **There is no fork** — engine fixes need an upstream release or a host-side workaround; do not propose editing engine sources. Bumping it has a procedure: use the `aether-update` skill. Every bump gets a changelog line. FFmpeg + libdovi arrive **only transitively through Aether**; there is no app-level FFmpeg layer and no direct FFmpegBuild dependency. Since FFmpegBuild 2.0.0 the FFmpeg libs ship as **embedded dynamic frameworks** in `DreamCAST.app/Frameworks/` — their `MinimumOSVersion` (26.0) must stay >= `TVOS_DEPLOYMENT_TARGET` (26.0), so do not raise the deployment target.
 - **Design Guide**: See `Docs/DESIGN_GUIDE.md` for UI/UX patterns
 - **Repo is public**: keep commit messages short and plain; no internal detail.
@@ -87,7 +87,7 @@ DreamCAST/                # The tvOS app — everything below.
 │   │                   #   rows), PlaylistAvailability (sidebar). The seam is in DreamCASTCore.
 │   ├── Plex/
 │   │   ├── (PlexDataStore, …; the Plex client lives in DreamCASTCore/Plex)
-│   │   └── Playback/   # AetherPlayer + routing/remux (see Docs/RIVULET_PLAYER.md),
+│   │   └── Playback/   # AetherPlayer + routing/remux (see Docs/DREAMCAST_PLAYER.md),
 │   │       │           #   HLSTrustRelay (loopback relay for the hls route)
 │   │       ├── Pipeline/     # ContentRouter (routing decisions)
 │   │       ├── ContentFilter/ # Local mute/skip filter (see "Content Filter (VOD)"),
@@ -136,7 +136,7 @@ DreamCAST/                # The tvOS app — everything below.
 │       └── UIKit/      # RootShellViewController, ShellSidebarViewController,
 │                       #   ShellSidebarModel (the custom sidebar, see "Sidebar and profiles")
 └── Docs/                   # gitignored, maintainer-local (see Build & Run note)
-    ├── RIVULET_PLAYER.md   # Canonical player reference (routing, AetherPlayer + AVPlayer)
+    ├── DREAMCAST_PLAYER.md   # Canonical player reference (routing, AetherPlayer + AVPlayer)
     └── DESIGN_GUIDE.md     # UI/UX documentation
 ```
 
@@ -475,7 +475,7 @@ SwiftUI's `.contextMenu` *does* still work — the tvOS 26 breakage is UIKit-onl
 
 ### Video Player Architecture
 
-**AetherPlayer** (an adapter around AetherEngine) is the only player, used for both VOD and Live TV. It conforms to `PlayerProtocol`; video renders through the engine surface via `AetherVideoSurfaceView` (`engine.bind(view:)`), which hosts whichever layer the active backend uses. The app drives a plain `AVPlayer` only on the `hls` route (Plex server transcode). `ContentRouter.plan(...)` returns a `PlaybackPlan { primary, fallbacks }`. Canonical reference: `Docs/RIVULET_PLAYER.md`.
+**AetherPlayer** (an adapter around AetherEngine) is the only player, used for both VOD and Live TV. It conforms to `PlayerProtocol`; video renders through the engine surface via `AetherVideoSurfaceView` (`engine.bind(view:)`), which hosts whichever layer the active backend uses. The app drives a plain `AVPlayer` only on the `hls` route (Plex server transcode). `ContentRouter.plan(...)` returns a `PlaybackPlan { primary, fallbacks }`. Canonical reference: `Docs/DREAMCAST_PLAYER.md`.
 
 ```
 UniversalPlayerView (SwiftUI) + PlayerContainerViewController (UIKit chrome)
@@ -1159,7 +1159,7 @@ Most tests live in `DreamCASTTests/Unit/` (mirrors `DreamCAST/` roughly by featu
 
 **The Simulator does not fully mimic Apple TV**, especially for focus-engine behavior. Treat Simulator-only verification of tvOS focus/remote-input changes as provisional; say so rather than declaring it fixed.
 
-**`Docs/` is gitignored** (untracked on purpose, `c89b52d`), though some files under it are force-added and do ship: the `superpowers/` plans, specs and handoff, `handoff/`, `release/screenshots/` (App Store art), and `AETHER_ENGINE_STARTUP_NOTES.md`. What is *not* in the repo is `Docs/RIVULET_PLAYER.md` and `Docs/DESIGN_GUIDE.md`, both referenced throughout this file; they live only on the maintainer's machine. The `aether-update` and `dreamcast-tvos-uikit` skills referenced above are also absent — `.claude/` is gitignored with nothing force-added. If a referenced doc or skill is missing in your environment, say so and proceed carefully rather than guessing its contents.
+**`Docs/` is gitignored** (untracked on purpose, `c89b52d`), though some files under it are force-added and do ship: the `superpowers/` plans, specs and handoff, `handoff/`, `release/screenshots/` (App Store art), and `AETHER_ENGINE_STARTUP_NOTES.md`. What is *not* in the repo is `Docs/DREAMCAST_PLAYER.md` and `Docs/DESIGN_GUIDE.md`, both referenced throughout this file; they live only on the maintainer's machine. The `aether-update` and `dreamcast-tvos-uikit` skills referenced above are also absent — `.claude/` is gitignored with nothing force-added. If a referenced doc or skill is missing in your environment, say so and proceed carefully rather than guessing its contents.
 
 ## Key Files
 
@@ -1204,7 +1204,7 @@ Most tests live in `DreamCASTTests/Unit/` (mirrors `DreamCAST/` roughly by featu
 | Emby provider | `DreamCASTCore/MediaProvider/Emby/EmbyProvider.swift` |
 | Glass row styling | `Views/Components/GlassRowStyle.swift` |
 | Settings rows / pages | `Views/Settings/UIKit/SettingsPageModels.swift` |
-| Player canon docs | `Docs/RIVULET_PLAYER.md` |
+| Player canon docs | `Docs/DREAMCAST_PLAYER.md` |
 | Design patterns | `Docs/DESIGN_GUIDE.md` |
 
 ## Design Philosophy
