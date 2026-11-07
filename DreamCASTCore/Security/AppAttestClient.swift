@@ -16,7 +16,7 @@ import CryptoKit
 import os
 import Sentry
 
-private let log = Logger(subsystem: "com.dreamcast.app", category: "AppAttest")
+nonisolated private let log = Logger(subsystem: "com.dreamcast.app", category: "AppAttest")
 
 actor AppAttestClient {
     static let shared = AppAttestClient()
