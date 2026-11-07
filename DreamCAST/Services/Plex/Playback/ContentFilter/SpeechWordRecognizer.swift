@@ -68,7 +68,19 @@ final class SpeechModelStore: ObservableObject {
     private var download: Task<Void, Never>?
 
     private init() {
-        state = AsrModels.modelsExist(at: Self.directory, version: Self.version) ? .ready : .absent
+        // Reading the asset pack and checking model files can block tvOS for
+        // seconds. Settings creates this singleton while opening Playback, so
+        // never do that disk work on the main actor.
+        state = .absent
+        Task.detached(priority: .utility) { [weak self] in
+            let installed = AsrModels.modelsExist(at: Self.directory, version: Self.version)
+            await MainActor.run {
+                guard let self else { return }
+                // A download may have started while the disk check ran.
+                guard self.state == .absent else { return }
+                self.state = installed ? .ready : .absent
+            }
+        }
     }
 
     var statusText: String {
