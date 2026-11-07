@@ -5,6 +5,7 @@ import CloudKit
 import Combine
 import CryptoKit
 import Foundation
+import Security
 import UIKit
 
 /// iCloud sync for both apps. Preferences ride `NSUbiquitousKeyValueStore` through `PreferenceMirror`;
@@ -43,10 +44,24 @@ final class CloudSync: ObservableObject {
     private lazy var vault = AccountVault()
     private lazy var coordinator = AccountSyncCoordinator(vault: vault, kinds: Self.accountKinds)
 
+    /// Free development profiles omit iCloud entitlements. Checking the signed
+    /// process avoids KVS and CloudKit calls that log errors or fail at launch.
+    nonisolated static let isAvailableInThisBuild: Bool = {
+        guard let task = SecTaskCreateFromSelf(kCFAllocatorDefault),
+              let kvStore = SecTaskCopyValueForEntitlement(
+                task, "com.apple.developer.ubiquity-kvstore-identifier" as CFString, nil) as? String,
+              !kvStore.isEmpty,
+              let services = SecTaskCopyValueForEntitlement(
+                task, "com.apple.developer.icloud-services" as CFString, nil) as? [String]
+        else { return false }
+        return services.contains("CloudKit") || services.contains("CloudKit-Anonymous")
+    }()
+
     /// Off until this device turns it on.
-    var isEnabled: Bool { defaults.bool(forKey: SyncCatalog.enabledKey) }
+    var isEnabled: Bool { Self.isAvailableInThisBuild && defaults.bool(forKey: SyncCatalog.enabledKey) }
 
     func setEnabled(_ enabled: Bool) {
+        guard !enabled || Self.isAvailableInThisBuild else { deactivate(); return }
         defaults.set(enabled, forKey: SyncCatalog.enabledKey)
         enabled ? activate() : deactivate()
     }
