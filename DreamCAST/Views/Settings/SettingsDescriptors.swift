@@ -207,6 +207,10 @@ enum SettingsDescriptorStore {
             icon: "memorychip",
             description: "Test Plex video playback through the server's HLS stream instead of Aether's local bridge. Plex may remux or transcode, affecting Dolby Vision and audio. Off uses the usual player."
         ),
+        "plexHDR10BaseLayerTest": SettingDescriptor(
+            icon: "tv",
+            description: "Test Dolby Vision files through Aether's HDR10 or HLG base layer. Keeps the original video stream and audio when compatible. Some Dolby Vision profiles have no base layer; Off restores Dolby Vision."
+        ),
         "streamingQualityOption": SettingDescriptor(
             icon: "dial.medium",
             description: "Original plays the file as is. Auto converts only when your connection needs it. A fixed rate converts anything above it, dropping HDR and Atmos."
