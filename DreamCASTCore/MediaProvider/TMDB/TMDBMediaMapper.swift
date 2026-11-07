@@ -12,7 +12,7 @@
 import Foundation
 
 enum TMDBMediaMapper {
-    static let providerID = "tmdb"
+    nonisolated static let providerID = "tmdb"
 
     private static let backdropBase = "https://image.tmdb.org/t/p/original"
     // w780 (not w500): posters appear on large carousel/detail cards where w500
@@ -24,7 +24,7 @@ enum TMDBMediaMapper {
     /// can disambiguate without a second round-trip. Format: "{movie|tv}:{id}".
     /// Decoding tolerates bare numeric itemIDs for backward compatibility with
     /// anything persisted before this format landed.
-    static func encodeItemID(tmdbId: Int, type: TMDBMediaType) -> String {
+    nonisolated static func encodeItemID(tmdbId: Int, type: TMDBMediaType) -> String {
         "\(type.rawValue):\(tmdbId)"
     }
 
