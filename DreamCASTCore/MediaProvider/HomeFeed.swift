@@ -18,7 +18,7 @@ nonisolated enum HomeFeed {
     static let railLimit = 20
     static let continueWatchingLimit = 50
     /// The libraries Home and the Library tab list: iOS has no music or photo browser.
-    static let videoKinds: Set<MediaLibrary.LibraryKind> = [.movies, .shows, .mixed]
+    nonisolated static let videoKinds: Set<MediaLibrary.LibraryKind> = [.movies, .shows, .mixed]
 
     enum Role: Sendable {
         /// The selected Plex server: the rows its user promoted to the Plex home screen.
