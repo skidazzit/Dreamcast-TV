@@ -178,6 +178,7 @@ struct TVSidebarView: View {
         .ignoresSafeArea()
         .onChange(of: selectedTab) { _, newTab in
             nestedNavState.isNested = false
+            if case .liveTV = newTab {} else { LiveTVLaunchMiniRequest.shared.channelID = nil }
         }
         .onChange(of: authManager.hasCredentials) { old, new in
             // Clear watchlist state on logout.
@@ -654,12 +655,11 @@ struct TVSidebarView: View {
             try? await Task.sleep(for: .seconds(2))
             guard !Task.isCancelled, setupComplete,
                   !isAwaitingProfileSelection, !showProfilePicker, !showWhatsNew,
-                  let channel = liveTVDataStore.channels.first(where: { $0.id == lastId }),
-                  let top = LiveProgramMenu.topViewController(),
-                  top.presentedViewController == nil else { return }
-            let player = LiveTVAetherPlayerViewController(channel: channel)
-            player.modalPresentationStyle = .fullScreen
-            top.present(player, animated: true)
+                  let channel = liveTVDataStore.channels.first(where: { $0.id == lastId }) else { return }
+            // Open the guide instead of presenting a full-screen player.
+            // The guide owns the mini-player and its session lifecycle.
+            LiveTVLaunchMiniRequest.shared.channelID = channel.id
+            selectedTab = .liveTV(sourceId: combineLiveTVSources ? nil : channel.sourceId)
         }
     }
 
