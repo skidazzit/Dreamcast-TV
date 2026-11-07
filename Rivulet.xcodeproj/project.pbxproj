@@ -262,15 +262,11 @@
 				A72E03D62EDA297D003A73DA /* Sources */,
 				A72E03D72EDA297D003A73DA /* Frameworks */,
 				A72E03D82EDA297D003A73DA /* Resources */,
-				A70B44472F05AF3200DEF5ED /* Embed Foundation Extensions */,
-				C40000050000000000000005 /* Embed ExtensionKit Extensions */,
 				F14974A8D7DB440F9A22ACBF /* Upload dSYMs to Sentry */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				A70B44412F05AF3200DEF5ED /* PBXTargetDependency */,
-				C400000E000000000000000E /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				A72E03DC2EDA297D003A73DA /* Rivulet */,
@@ -565,11 +561,11 @@
 				APPATTEST_ENVIRONMENT = development;
 				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = Rivulet/Rivulet.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 93;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = ZHB786H6YN;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -598,9 +594,9 @@
 					"-liconv",
 					"-lz",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.gstudios.rivulet;
+				PRODUCT_BUNDLE_IDENTIFIER = com.skidazzit.dreamcasttv.dev;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				REGISTER_APP_GROUPS = YES;
+				REGISTER_APP_GROUPS = NO;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "appletvos appletvsimulator iphoneos iphonesimulator macosx xros xrsimulator";
@@ -624,11 +620,11 @@
 				APPATTEST_ENVIRONMENT = production;
 				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = Rivulet/Rivulet.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 93;
 				DEAD_CODE_STRIPPING = YES;
-				DEVELOPMENT_TEAM = ZHB786H6YN;
+				DEVELOPMENT_TEAM = "";
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
@@ -657,9 +653,9 @@
 					"-liconv",
 					"-lz",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.gstudios.rivulet;
+				PRODUCT_BUNDLE_IDENTIFIER = com.skidazzit.dreamcasttv.dev;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				REGISTER_APP_GROUPS = YES;
+				REGISTER_APP_GROUPS = NO;
 				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "appletvos appletvsimulator iphoneos iphonesimulator macosx xros xrsimulator";
