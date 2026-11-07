@@ -960,9 +960,24 @@ final class EPGContainerView: UIView {
             }
             guard self.pendingGridFocusTarget == nil else { return }
             self.pendingGridFocusTarget = cell
-            self.setNeedsFocusUpdate()
-            self.updateFocusIfNeeded()
+            // The initial focus may still belong to the outer SwiftUI shell.
+            // A container-local request is then ignored. Ask the window's
+            // focus system directly, as the other UIKit grids in DreamCAST do.
+            if let system = UIFocusSystem.focusSystem(for: cv) {
+                system.requestFocusUpdate(to: cell)
+                system.updateFocusIfNeeded()
+            } else {
+                self.setNeedsFocusUpdate()
+                self.updateFocusIfNeeded()
+            }
             self.pendingGridFocusTarget = nil
+            let focused = UIFocusSystem.focusSystem(for: cv)?.focusedItem as? UIView
+            if focused !== cell && !(focused?.isDescendant(of: cell) ?? false) {
+                print("[GuideFocus] Focus request deferred: section=\(indexPath.section), retries=\(retries)")
+                if retries > 0 { self.focusGridCell(at: indexPath, in: cv, retries: retries - 1) }
+            } else {
+                print("[GuideFocus] Focus landed: section=\(indexPath.section), item=\(indexPath.item)")
+            }
         }
     }
 
