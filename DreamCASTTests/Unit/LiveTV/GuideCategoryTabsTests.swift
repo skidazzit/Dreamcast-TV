@@ -46,6 +46,33 @@ final class GuideCategoryTabsTests: XCTestCase {
                        ["Sports", "Movies", "Kids", "News"])
     }
 
+    func test_hiddenGroupsDisappearButSavedOrderIsKept() {
+        XCTAssertEqual(GuideLayoutView.tabTitles(
+            groups: ["Sports", "News", "Movies"], sourceNames: ["IPTV"], hasFavorites: true,
+            savedOrder: ["Movies", "Sports", "News"], hiddenGroups: ["Sports"]),
+            ["Favorites", "IPTV", "Movies", "News"])
+    }
+
+    func test_customGuideChannelNameAndPrefixRules() {
+        let channel = UnifiedChannel(id: "guide-name-test", sourceType: .genericM3U,
+                                     sourceId: "test", name: "US: ESPN HD")
+        let defaults = UserDefaults.standard
+        let beforePrefix = defaults.string(forKey: LiveTVChannelNames.prefixKey)
+        let beforeSuffix = defaults.string(forKey: LiveTVChannelNames.suffixKey)
+        defer {
+            if let beforePrefix { defaults.set(beforePrefix, forKey: LiveTVChannelNames.prefixKey) }
+            else { defaults.removeObject(forKey: LiveTVChannelNames.prefixKey) }
+            if let beforeSuffix { defaults.set(beforeSuffix, forKey: LiveTVChannelNames.suffixKey) }
+            else { defaults.removeObject(forKey: LiveTVChannelNames.suffixKey) }
+            LiveTVChannelNames.setCustomName("", for: channel.id)
+        }
+        defaults.set("US:", forKey: LiveTVChannelNames.prefixKey)
+        defaults.set("HD", forKey: LiveTVChannelNames.suffixKey)
+        XCTAssertEqual(LiveTVChannelNames.displayName(for: channel), "ESPN")
+        LiveTVChannelNames.setCustomName("ESPN One", for: channel.id)
+        XCTAssertEqual(LiveTVChannelNames.displayName(for: channel), "ESPN One")
+    }
+
     func test_sourceChannelOrderSurvivesOutOfOrderFetchCompletion() {
         let first = [
             UnifiedChannel(id: "sports", sourceType: .genericM3U, sourceId: "a", channelNumber: 300, name: "Sports"),
