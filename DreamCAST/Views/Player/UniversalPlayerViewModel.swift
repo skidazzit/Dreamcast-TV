@@ -1242,13 +1242,11 @@ final class UniversalPlayerViewModel: ObservableObject {
             }
             // HLS route only: AetherPlayer handles background itself, and pausing
             // here would make a watching user return paused.
-            if self.aetherPlayer != nil { return }
-            if self.playbackState == .playing {
+            Task { @MainActor [weak self] in
+                guard let self, self.aetherPlayer == nil, self.playbackState == .playing else { return }
                 self.pausedDueToAppInactive = true
                 print("[Player] App entering background — pausing")
-                Task { @MainActor in
-                    self.pause()
-                }
+                self.pause()
             }
         }
 
@@ -1276,19 +1274,16 @@ final class UniversalPlayerViewModel: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             guard let self else { return }
-            if self.pausedDueToAppInactive {
-                self.pausedDueToAppInactive = false
-            }
-            // The foreground reload rebuffers by design.
             Task { @MainActor [weak self] in
-                self?.stallTracker.noteSeekOrLoad(at: Date())
+                guard let self else { return }
+                if self.pausedDueToAppInactive { self.pausedDueToAppInactive = false }
+                // The foreground reload rebuffers by design.
+                self.stallTracker.noteSeekOrLoad(at: Date())
             }
         }
     }
 
     func prepareStreamURL() async {
-        let networkManager = PlexNetworkManager.shared
-
         guard metadata.ratingKey != nil else { return }
 
         // Sticky per-item subtitle delay (OSD stepper).
@@ -1876,7 +1871,7 @@ final class UniversalPlayerViewModel: ObservableObject {
     private func startAVPlayerPlayback() async {
         await ensureStreamURLPrepared()
 
-        guard let url = streamURL else {
+        guard streamURL != nil else {
             errorMessage = String(localized: "No stream URL available")
             playbackState = .failed(.invalidURL)
             return
@@ -4468,9 +4463,7 @@ final class UniversalPlayerViewModel: ObservableObject {
                 //print("🖼️ [THUMB] First media id: \(firstMedia.id)")
                 if let parts = firstMedia.Part {
                     //print("🖼️ [THUMB] Part count: \(parts.count)")
-                    if let firstPart = parts.first {
-                        //print("🖼️ [THUMB] First part id: \(firstPart.id)")
-                    }
+                    _ = parts.first
                 } else {
                     print("⚠️ [THUMB] No Part array in media")
                 }
@@ -4912,9 +4905,8 @@ final class UniversalPlayerViewModel: ObservableObject {
         controlsTimer?.invalidate()
         controlsTimer = Timer.scheduledTimer(withTimeInterval: controlsHideDelay, repeats: false) { [weak self] _ in
             guard let self else { return }
-            let isPlaying = self.playbackState == .playing
             Task { @MainActor [weak self] in
-                guard let self, isPlaying else { return }
+                guard let self, self.playbackState == .playing else { return }
                 // Re-check at FIRE time: a panel can open after the timer was
                 // already armed. The arm-time guard alone leaves that timer running.
                 guard !self.isRailPanelOpen else { return }
@@ -4931,7 +4923,7 @@ final class UniversalPlayerViewModel: ObservableObject {
         compatibilityNotice = message
         compatibilityNoticeTimer?.invalidate()
         compatibilityNoticeTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { [weak self] _ in
-            self?.compatibilityNotice = nil
+            Task { @MainActor [weak self] in self?.compatibilityNotice = nil }
         }
     }
 
@@ -6119,8 +6111,6 @@ final class UniversalPlayerViewModel: ObservableObject {
             }
 
             // Debug: show what episodes and indexes we have
-            let episodeInfo = sortedEpisodes.map { "E\($0.index ?? -1): \($0.title ?? "?")" }
-
             // End of season - try next season
             guard let showKey = metadata.grandparentRatingKey,
                   let seasonIndex = metadata.parentIndex else {
@@ -6140,7 +6130,6 @@ final class UniversalPlayerViewModel: ObservableObject {
 
             guard let nextSeason = sortedSeasons.first(where: { ($0.index ?? 0) > seasonIndex }),
                   let nextSeasonKey = nextSeason.ratingKey else {
-                let seasonIndexes = sortedSeasons.compactMap { $0.index }
                 return nil
             }
 
