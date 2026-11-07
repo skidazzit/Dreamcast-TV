@@ -5,6 +5,23 @@ import XCTest
 @testable import DreamCAST
 
 final class RouteAudioPolicyTests: XCTestCase {
+    func testLiveBufferOnlyBoostsAfterRepeatedStarvation() {
+        var health = LiveBufferHealth()
+        XCTAssertFalse(health.observe(forwardSeconds: 2.5, droppedFrames: 0, waiting: false))
+        XCTAssertFalse(health.observe(forwardSeconds: 2.0, droppedFrames: 0, waiting: false))
+        XCTAssertTrue(health.observe(forwardSeconds: 1.0, droppedFrames: 0, waiting: false))
+        health.didApplyBoost()
+        XCTAssertFalse(health.observe(forwardSeconds: 1.0, droppedFrames: 0, waiting: true))
+    }
+
+    func testLiveBufferIgnoresSingleBadFrameBurst() {
+        var health = LiveBufferHealth()
+        XCTAssertFalse(health.observe(forwardSeconds: 7, droppedFrames: 0, waiting: false))
+        XCTAssertFalse(health.observe(forwardSeconds: 7, droppedFrames: 5, waiting: false))
+        XCTAssertFalse(health.observe(forwardSeconds: 7, droppedFrames: 5, waiting: false))
+        XCTAssertEqual(health.consecutiveBadSamples, 0)
+    }
+
     func testLocalRouteKeepsNativePolicy() {
         let snapshot = RouteAudioSnapshot(
             isAirPlay: false,
