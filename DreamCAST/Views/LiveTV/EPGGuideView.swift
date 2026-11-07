@@ -817,6 +817,10 @@ final class EPGContainerView: UIView {
 
         miniPlayer.isFocusable = true
         miniPlayer.isHidden = true
+        // The guide positions this view by setting bounds and center in
+        // layoutSubviews. Disable autoresizing constraints: at first mount its
+        // frame is zero and UIKit otherwise constrains its width to zero.
+        miniPlayer.translatesAutoresizingMaskIntoConstraints = false
         let select = UITapGestureRecognizer(target: self, action: #selector(selectMiniPlayer))
         select.allowedPressTypes = [NSNumber(value: UIPress.PressType.select.rawValue)]
         miniPlayer.addGestureRecognizer(select)
