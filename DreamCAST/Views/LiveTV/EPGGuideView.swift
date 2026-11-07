@@ -913,8 +913,9 @@ final class EPGContainerView: UIView {
     /// requesting environment contains focus, so this asks as the container,
     /// which contains the whole grid.
     func focusGridCell(at indexPath: IndexPath, in cv: UICollectionView) {
-        DispatchQueue.main.async { [weak self, weak cv] in
-            guard let self, let cv, self.pendingGridFocusTarget == nil else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self, weak cv] in
+            guard let self, let cv, self.window != nil,
+                  self.pendingGridFocusTarget == nil else { return }
             cv.layoutIfNeeded()
             guard let cell = cv.cellForItem(at: indexPath) else { return }
             self.pendingGridFocusTarget = cell
