@@ -135,6 +135,9 @@ class LiveTVDataStore: ObservableObject {
     private var channelLoad: (task: Task<Void, Never>, generation: Int)?
     private var epgLoad: (task: Task<Void, Never>, generation: Int, channelCount: Int, window: DateInterval)?
     private var backgroundPreloadTask: Task<Void, Never>?
+    /// Prevent the delayed background preload from repeating a startup fetch
+    /// already completed by the autoplay launch gate.
+    private var completedStartupPlaylistFetch = false
     /// The sidebar may be rebuilt many times. Startup fetch runs once per app
     /// process, never once per sidebar/guide appearance.
     private var didScheduleStartupFetch = false
@@ -299,6 +302,15 @@ class LiveTVDataStore: ObservableObject {
 
     /// Fetch playlists on demand, or at launch without forcing a second
     /// network request if the first channel load is already running.
+    func prepareForStartupAutoplay() async {
+        if let inFlight = playlistFetchTask {
+            await inFlight.value
+            return
+        }
+        guard !completedStartupPlaylistFetch else { return }
+        await fetchPlaylistsNow(force: false)
+    }
+
     func fetchPlaylistsNow(force: Bool = true) async {
         if let playlistFetchTask {
             await playlistFetchTask.value
@@ -329,6 +341,7 @@ class LiveTVDataStore: ObservableObject {
         }
         playlistFetchTask = task
         await task.value
+        completedStartupPlaylistFetch = true
         playlistFetchTask = nil
     }
 
@@ -1379,6 +1392,7 @@ class LiveTVDataStore: ObservableObject {
             // A separate switch lets viewers disable launch-time network fetches.
             guard userDefaults.object(forKey: Self.autoFetchOnStartupKey) as? Bool ?? true else { return }
 
+            guard !completedStartupPlaylistFetch else { return }
             await fetchPlaylistsNow(force: false)
         }
     }
