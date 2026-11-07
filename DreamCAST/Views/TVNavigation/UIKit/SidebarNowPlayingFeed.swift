@@ -44,7 +44,8 @@ final class SidebarNowPlayingFeed: ObservableObject {
     private var expiryTask: Task<Void, Never>?
     private var subscription: AnyCancellable?
 
-    init(queue: MusicQueue = .shared) {
+    init(queue: MusicQueue? = nil) {
+        let queue = queue ?? .shared
         // Track and state only: the queue's clock publishes several times a second.
         subscription = queue.$currentTrack.combineLatest(queue.$playbackState)
             .receive(on: DispatchQueue.main)
