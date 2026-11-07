@@ -19,6 +19,7 @@ import UIKit
 struct GuideLayoutView: View {
     /// Optional source ID to filter channels. nil = show all sources.
     var sourceIdFilter: String?
+    var startupMiniChannelID: String? = nil
 
     @StateObject private var dataStore = LiveTVDataStore.shared
 
@@ -222,6 +223,10 @@ struct GuideLayoutView: View {
         .task {
             seedFocus()
             await dataStore.refreshScheduledRecordings()
+        }
+        .task(id: startupMiniChannelID) {
+            guard let startupMiniChannelID else { return }
+            await startLaunchMiniPlayer(channelID: startupMiniChannelID)
         }
         .onChange(of: channels.count) { _, _ in seedFocus() }
         .onChange(of: groupTitles) { _, titles in
@@ -553,6 +558,46 @@ struct GuideLayoutView: View {
         let minute = cal.component(.minute, from: nowDate)
         timelineStart = cal.date(bySettingHour: cal.component(.hour, from: nowDate),
                                  minute: (minute / 30) * 30, second: 0, of: nowDate) ?? nowDate
+    }
+
+    /// Launch directly into the guide's corner player, with no full-screen
+    /// presentation. The session is stopped by onDisappear or on background.
+    private func startLaunchMiniPlayer(channelID: String) async {
+        guard miniSession == nil,
+              let channel = sourceChannels.first(where: { $0.id == channelID }) else { return }
+        let player = AetherPlayer()
+        let keepalive = PlexLiveTimelineKeepalive()
+        let resolved: URL
+        do {
+            guard let url = try await dataStore.resolveStreamURL(for: channel) else { return }
+            resolved = url
+        } catch { return }
+        if Task.isCancelled {
+            PlexLiveTimelineKeepalive.release(resolved, sourceID: channel.sourceId)
+            return
+        }
+        let forceDemux = resolved.path.hasPrefix("/livetv/sessions/")
+        let nativeHLS = AetherPlayer.liveRoute(for: resolved, forceEngineDemux: forceDemux) == .nativeHLS
+        let session = LiveTVSessionHandoff(channel: channel, player: player,
+                                           keepalive: keepalive, isNativeHLSRoute: nativeHLS)
+        keepalive.start(url: resolved, sourceID: channel.sourceId)
+        miniSession = session
+        await Task.yield() // Let the mini-player bind its video surface.
+        do {
+            try await player.loadLive(url: resolved,
+                                      headers: LiveTVClientIdentity.streamHeaders(for: channel),
+                                      forceEngineDemux: forceDemux, role: .multiviewSlot)
+            guard !Task.isCancelled, !session.isStopped else {
+                session.stop()
+                if miniSession === session { miniSession = nil }
+                return
+            }
+            player.play()
+            _ = dataStore.beganWatching(channel)
+        } catch {
+            session.stop()
+            if miniSession === session { miniSession = nil }
+        }
     }
 
     private func seedFocus() {
