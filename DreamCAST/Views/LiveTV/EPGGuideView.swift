@@ -66,6 +66,15 @@ enum EPGTheme {
     static var showLogos: Bool { SettingsStore.bool("liveTVGuideShowLogos", default: true) }
     static var showClock: Bool { SettingsStore.bool("liveTVGuideShowClock", default: true) }
     static var rowSize: Int { SettingsStore.int("liveTVGuideRowSize", default: 1) }
+    /// The logo and name form one sticky column. Keep its width independent
+    /// of the time scale, so it can be adjusted without changing the EPG zoom.
+    static var channelColumnWidthSetting: Int {
+        min(max(SettingsStore.int("liveTVGuideChannelColumnWidth", default: 220), 160), 420)
+    }
+    static var channelRowHeightSetting: Int {
+        let height = SettingsStore.int("liveTVGuideChannelRowHeight", default: 0)
+        return height > 0 ? min(max(height, 60), 160) : [68, 82, 100, 120][min(max(rowSize, 0), 3)]
+    }
     static var fontSize: Int { min(max(SettingsStore.int("liveTVGuideFontSize", default: 1), 0), 2) }
     static var fontScale: CGFloat { [0.85, 1.0, 1.15][fontSize] }
     static var unfocusedOpacity: CGFloat {
@@ -92,11 +101,13 @@ enum EPGTheme {
         tivimate ? 1440 / CGFloat(max(90, timeScale)) : 7.5
     }
     /// Width of the sticky channel column on the left.
-    static var channelColumnWidth: CGFloat { tivimate ? 220 : 129 }
+    static var channelColumnWidth: CGFloat {
+        tivimate ? CGFloat(channelColumnWidthSetting) : 129
+    }
     /// Height of each channel row.
     static var rowHeight: CGFloat {
         guard tivimate else { return 94 }
-        return [68, 82, 100][min(max(rowSize, 0), 2)]
+        return CGFloat(channelRowHeightSetting)
     }
     /// Height of the sticky timeline header.
     static var timelineHeight: CGFloat { tivimate ? 48 : 54 }
@@ -1820,9 +1831,10 @@ final class ChannelColumnView: UICollectionReusableView {
         let number = channel.channelNumber.map(String.init)
         numberLabel.text = number
         numberLabel.isHidden = number == nil
-        logoHeight.constant = number == nil ? 70 : 52
+        logoHeight.constant = min(number == nil ? 70 : 52, EPGTheme.rowHeight - 18)
         nameLabel.text = LiveTVChannelNames.displayName(for: channel)
-        logoCenterX.constant = EPGTheme.tivimate ? -55 : 0
+        // Anchor the logo at the left even as the full column grows wider.
+        logoCenterX.constant = EPGTheme.tivimate ? 55 - EPGTheme.channelColumnWidth / 2 : 0
         sideNameLabel.text = LiveTVChannelNames.displayName(for: channel)
         nameViewport.isHidden = !EPGTheme.tivimate
         marqueeEnabled = false
