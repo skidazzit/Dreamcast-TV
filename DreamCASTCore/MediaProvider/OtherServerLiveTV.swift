@@ -26,12 +26,15 @@ extension OtherServerKind {
         secondary: [any MediaProvider]? = nil,
         accounts: [MediaProviderKind: String]? = nil,
         restricted: Bool,
-        sync: (OtherServerKind, (any MediaProvider)?) -> Void = { $0.syncLiveTV($1) }
+        sync: ((OtherServerKind, (any MediaProvider)?) -> Void)? = nil
     ) {
         installLiveSessionClosers()
         let accountIDs: [MediaProviderKind: String] = restricted ? [:] : accounts ?? Dictionary(
             uniqueKeysWithValues: all.compactMap { other in other.account().map { (other.kind, $0.providerID) } })
         let shown = shown(secondary ?? MediaProviderRegistry.shared.secondaryProviders, accountIDs: accountIDs)
-        for other in all { sync(other, shown.first { $0.kind == other.kind }) }
+        for other in all {
+            let provider = shown.first { $0.kind == other.kind }
+            if let sync { sync(other, provider) } else { other.syncLiveTV(provider) }
+        }
     }
 }
