@@ -1312,7 +1312,23 @@ final class UniversalPlayerViewModel: ObservableObject {
             playbackPolicy: .directPlayFirst,
             transcodeStep: activeStreamPlan.step
         )
-        let plan = ContentRouter.plan(for: routingContext)
+        let defaultPlan = ContentRouter.plan(for: routingContext)
+        // Test Plex's server HLS path without Aether's local fMP4 bridge.
+        // Opt-in only: Plex may remux or transcode, changing HDR/audio support.
+        let plan: PlaybackPlan
+        if case .plex = source,
+           SettingsStore.bool("plexNativeHLSMemoryTest", default: false),
+           case .aether = defaultPlan.primary {
+            plan = PlaybackPlan(
+                policy: defaultPlan.policy,
+                primary: .hls(url: routingContext.serverURL, headers: nil),
+                fallbacks: [],
+                reasoning: defaultPlan.reasoning + ["user_opt_in_plex_hls_memory_test"]
+            )
+            print("[Player] Plex native HLS memory test enabled (server remux/transcode)")
+        } else {
+            plan = defaultPlan
+        }
         playbackPlan = plan
         activeRoute = plan.primary
         dreamcastFallbackURL = nil
