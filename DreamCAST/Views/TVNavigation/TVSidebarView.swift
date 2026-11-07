@@ -1032,6 +1032,10 @@ private struct DreamCASTStartupSplash: View {
     let stage: String
     let progress: Double
     let playlistStatus: LiveTVDataStore.PlaylistFetchStatus?
+    @State private var isAnimating = false
+
+    private let turquoise = Color(red: 0.04, green: 0.84, blue: 0.75)
+    private let amber = Color(red: 1, green: 0.64, blue: 0.22)
 
     private var displayedProgress: Double {
         guard progress < 0.72, let playlistStatus else { return progress }
@@ -1040,32 +1044,73 @@ private struct DreamCASTStartupSplash: View {
 
     var body: some View {
         ZStack {
-            Color(red: 0.025, green: 0.035, blue: 0.065)
-            VStack(spacing: 32) {
+            LinearGradient(
+                colors: [Color(red: 0.025, green: 0.065, blue: 0.11),
+                         Color(red: 0.018, green: 0.024, blue: 0.055),
+                         Color(red: 0.11, green: 0.035, blue: 0.065)],
+                startPoint: .topLeading, endPoint: .bottomTrailing)
+
+            Circle()
+                .fill(turquoise.opacity(0.24))
+                .frame(width: 630, height: 630)
+                .blur(radius: 130)
+                .offset(x: isAnimating ? -510 : -650, y: isAnimating ? -260 : -180)
+            Circle()
+                .fill(amber.opacity(0.18))
+                .frame(width: 530, height: 530)
+                .blur(radius: 115)
+                .offset(x: isAnimating ? 610 : 480, y: isAnimating ? 330 : 250)
+
+            VStack(spacing: 26) {
                 Image("DreamCASTStartupLogo")
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 560, height: 336)
+                    .frame(width: 620, height: 372)
+                    .blendMode(.screen)
+                    .scaleEffect(isAnimating ? 1.025 : 0.98)
+                    .shadow(color: turquoise.opacity(0.18), radius: 48)
                     .accessibilityHidden(true)
                 Text("Getting everything ready to watch")
                     .font(.system(size: 28))
-                    .foregroundStyle(.white.opacity(0.7))
-                VStack(alignment: .leading, spacing: 16) {
-                    Text(progress < 0.72 ? (playlistStatus?.message ?? stage) : stage)
-                        .font(.system(size: 24, weight: .medium))
-                        .foregroundStyle(.white)
-                    ProgressView(value: displayedProgress, total: 1)
-                        .tint(.cyan)
-                    HStack {
-                        Text("TV playlists  •  Programme guide  •  Media libraries")
+                    .foregroundStyle(.white.opacity(0.84))
+                VStack(alignment: .leading, spacing: 22) {
+                    HStack(spacing: 14) {
+                        Image(systemName: progress >= 1 ? "checkmark.circle.fill" : "arrow.triangle.2.circlepath")
+                            .foregroundStyle(turquoise)
+                            .symbolEffect(.rotate, options: .repeating, isActive: progress < 1)
+                        Text(progress < 0.72 ? (playlistStatus?.message ?? stage) : stage)
+                            .font(.system(size: 24, weight: .medium))
+                            .foregroundStyle(.white)
                         Spacer()
                         Text("\(Int(displayedProgress * 100))%")
                             .monospacedDigit()
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundStyle(turquoise)
                     }
-                    .font(.system(size: 18))
-                    .foregroundStyle(.white.opacity(0.55))
+                    GeometryReader { geometry in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(.white.opacity(0.1))
+                            Capsule()
+                                .fill(LinearGradient(colors: [turquoise, amber, Color(red: 1, green: 0.32, blue: 0.38)],
+                                                     startPoint: .leading, endPoint: .trailing))
+                                .frame(width: max(0, geometry.size.width * min(max(displayedProgress, 0), 1)))
+                                .animation(.easeInOut(duration: 0.35), value: displayedProgress)
+                        }
+                    }
+                    .frame(height: 10)
+                    Text("TV playlists   •   Programme guide   •   Media libraries")
+                        .font(.system(size: 18))
+                        .foregroundStyle(.white.opacity(0.55))
                 }
-                .frame(width: 790)
+                .padding(32)
+                .frame(width: 870)
+                .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 26))
+                .overlay(RoundedRectangle(cornerRadius: 26).strokeBorder(.white.opacity(0.12), lineWidth: 1))
+            }
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 4).repeatForever(autoreverses: true)) {
+                isAnimating = true
             }
         }
         .accessibilityElement(children: .combine)
