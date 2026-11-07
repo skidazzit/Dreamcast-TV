@@ -913,11 +913,20 @@ final class EPGContainerView: UIView {
     /// requesting environment contains focus, so this asks as the container,
     /// which contains the whole grid.
     func focusGridCell(at indexPath: IndexPath, in cv: UICollectionView) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) { [weak self, weak cv] in
-            guard let self, let cv, self.window != nil,
-                  self.pendingGridFocusTarget == nil else { return }
+        focusGridCell(at: indexPath, in: cv, retries: 4)
+    }
+
+    private func focusGridCell(at indexPath: IndexPath, in cv: UICollectionView, retries: Int) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { [weak self, weak cv] in
+            guard let self, let cv, self.window != nil else { return }
             cv.layoutIfNeeded()
-            guard let cell = cv.cellForItem(at: indexPath) else { return }
+            guard let cell = cv.cellForItem(at: indexPath) else {
+                // The first guide paint can precede the grid's layout pass.
+                // Keep the autoplay focus request until its row exists.
+                if retries > 0 { self.focusGridCell(at: indexPath, in: cv, retries: retries - 1) }
+                return
+            }
+            guard self.pendingGridFocusTarget == nil else { return }
             self.pendingGridFocusTarget = cell
             self.setNeedsFocusUpdate()
             self.updateFocusIfNeeded()
@@ -1117,7 +1126,9 @@ final class GuideCategoryBarView: UIView {
         view.contentInsetAdjustmentBehavior = .never
         view.showsHorizontalScrollIndicator = false
         view.showsVerticalScrollIndicator = false
-        view.remembersLastFocusedIndexPath = true
+        // A stale All Channels focus must not override a programmatic group
+        // choice when the guide opens with an autoplayed channel.
+        view.remembersLastFocusedIndexPath = false
         view.dataSource = self
         view.delegate = self
         view.register(
@@ -1150,6 +1161,14 @@ final class GuideCategoryBarView: UIView {
         collectionView.frame = bounds
     }
 
+    override var preferredFocusEnvironments: [UIFocusEnvironment] {
+        if let selectedIndex = items.firstIndex(where: { !$0.isAction && $0.group == selectedGroup }),
+           let cell = collectionView.cellForItem(at: IndexPath(item: selectedIndex, section: 0)) {
+            return [cell]
+        }
+        return [collectionView]
+    }
+
     func configure(
         titles: [String],
         selected: String?,
@@ -1174,6 +1193,15 @@ final class GuideCategoryBarView: UIView {
             collectionView.reloadData()
         } else if selectionChanged {
             refreshVisiblePills()
+        }
+        if selectionChanged,
+           let selectedIndex = items.firstIndex(where: { !$0.isAction && $0.group == selectedGroup }) {
+            // A programmatic switch (startup autoplay) must update the pill
+            // remembered by tvOS, not just paint a different selected pill.
+            let indexPath = IndexPath(item: selectedIndex, section: 0)
+            lastFocusedIndexPath = indexPath
+            collectionView.layoutIfNeeded()
+            collectionView.scrollToItem(at: indexPath, at: .centeredHorizontally, animated: false)
         }
     }
 
