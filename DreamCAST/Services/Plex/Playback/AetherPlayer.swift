@@ -91,6 +91,12 @@ final class AetherPlayer: PlayerProtocol {
     private var hostPlayerWaiting = false
     private var timeControlStatusCancellable: AnyCancellable?
 
+    /// Watch live transport health without touching the stream reader thread.
+    /// The engine's telemetry exposes buffer depth and dropped frames, not raw
+    /// AVIO read latency, so repeated starvation is the slow-read signal here.
+    private var liveBufferHealth = LiveBufferHealth()
+    private var monitoringLiveBuffer = false
+
     /// Active Aether subtitle stream index, or nil when subtitles are off.
     @Published private(set) var activeSubtitleTrackId: Int?
 
@@ -184,6 +190,28 @@ final class AetherPlayer: PlayerProtocol {
         EngineTLS.serverTrustEvaluator = { PlexCertificateDelegate.trustsServer($0) }
         wireUpPublishers()
         observeAppLifecycle()
+        Timer.publish(every: 2, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in self?.checkLiveBufferHealth() }
+            .store(in: &cancellables)
+    }
+
+    private func checkLiveBufferHealth() {
+        guard monitoringLiveBuffer, userIntendsToPlay else { return }
+        let telemetry = engine.diagnostics.liveTelemetry
+        let shouldBoost = liveBufferHealth.observe(
+            forwardSeconds: telemetry?.forwardBufferSeconds,
+            droppedFrames: telemetry?.droppedFrameCount,
+            waiting: hostPlayerWaiting || engineReportsBuffering)
+        guard shouldBoost else { return }
+        // The live remux uses an AVPlayer for its local HLS output. Give it a
+        // larger safety margin only after repeated starvation, not every zap.
+        if let player = currentAVPlayer, let item = player.currentItem {
+            player.automaticallyWaitsToMinimizeStalling = true
+            item.preferredForwardBufferDuration = 12
+            liveBufferHealth.didApplyBoost()
+            DiagLog.notice(.playback, "Live transport unstable: raised AVPlayer forward buffer to 12s")
+        }
     }
 
     private func wireUpPublishers() {
@@ -728,6 +756,8 @@ final class AetherPlayer: PlayerProtocol {
     // MARK: - Controls
 
     func load(url: URL, headers: [String: String]?, startTime: TimeInterval?) async throws {
+        monitoringLiveBuffer = false
+        liveBufferHealth = LiveBufferHealth()
         try await load(
             url: url,
             headers: headers,
@@ -828,6 +858,8 @@ final class AetherPlayer: PlayerProtocol {
     /// fallback when a server rejects AVPlayer's request pattern.
     func loadLive(url: URL, headers: [String: String]?, forceEngineDemux: Bool = false,
                   role: LiveLoadRole = .fullscreen) async throws {
+        monitoringLiveBuffer = role == .fullscreen
+        liveBufferHealth = LiveBufferHealth()
         finishAVCapture()
         dropFrameExtractor()
         if role == .fullscreen { startAVCapture(url: url) }
@@ -1266,6 +1298,8 @@ final class AetherPlayer: PlayerProtocol {
     /// `resetDisplayCriteria: false` keeps the TV's mode for a following load
     /// on this player, so a same-format channel change makes no HDMI switch (#419).
     func stop(resetDisplayCriteria: Bool) {
+        monitoringLiveBuffer = false
+        liveBufferHealth = LiveBufferHealth()
         foregroundReloadTask?.cancel()
         pendingReloadSince = nil
         userIntendsToPlay = false
@@ -1627,6 +1661,32 @@ final class AetherPlayer: PlayerProtocol {
             rssMb: t?.rssMb
         )
     }
+}
+
+/// Detects sustained transport starvation rather than reacting to one bad packet.
+/// Raw AVIO read times are not exposed by the engine, so low forward buffer,
+/// dropped frames and player waiting are the available live signals.
+struct LiveBufferHealth {
+    private(set) var consecutiveBadSamples = 0
+    private var lastDroppedFrames: Int?
+    private var boosted = false
+
+    mutating func observe(forwardSeconds: Double?, droppedFrames: Int?, waiting: Bool) -> Bool {
+        if let droppedFrames {
+            defer { lastDroppedFrames = droppedFrames }
+            let newlyDropped = max(0, droppedFrames - (lastDroppedFrames ?? droppedFrames))
+            let lowBuffer = forwardSeconds.map { $0.isFinite && $0 < 3 } ?? false
+            consecutiveBadSamples = (waiting || lowBuffer || newlyDropped >= 2)
+                ? min(consecutiveBadSamples + 1, 3) : 0
+        } else {
+            let lowBuffer = forwardSeconds.map { $0.isFinite && $0 < 3 } ?? false
+            consecutiveBadSamples = (waiting || lowBuffer)
+                ? min(consecutiveBadSamples + 1, 3) : 0
+        }
+        return !boosted && consecutiveBadSamples >= 3
+    }
+
+    mutating func didApplyBoost() { boosted = true }
 }
 
 /// Full "stats for nerds" snapshot for the Info popup's Advanced tab. An
