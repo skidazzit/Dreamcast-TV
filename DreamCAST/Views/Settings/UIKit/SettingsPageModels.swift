@@ -607,6 +607,8 @@ enum SettingsContent {
                             })),
             toggle("plexNativeHLSMemoryTest", "Plex HLS Memory Test",
                    key: "plexNativeHLSMemoryTest", default: false),
+            toggle("plexHDR10BaseLayerTest", "Dolby Vision Base Layer Test",
+                   key: "plexHDR10BaseLayerTest", default: false),
             .header("Remote"),
             SettingsRowItem(id: "skipLength", title: "Skip Forward",
                             kind: .navigationValue(.skipIntervalPicker, value: {
