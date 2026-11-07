@@ -56,9 +56,10 @@ enum ProviderPlayer {
             if item.kind == .show || item.kind == .season {
                 target = await EpisodePicker.resolvePlayTarget(for: item, provider: provider) ?? item
             }
+            let resolvedTarget = target
             // The loading screen's art, fetched while the stream is resolved.
             async let loadingImages = HeroBackdropResolver.shared.playerLoadingImages(
-                for: target.heroBackdropRequest())
+                for: resolvedTarget.heroBackdropRequest())
             // Another Plex server's item takes the full Plex player with its own
             // server: markers, transcode fallback, content filter, BIF (#87).
             if let plex = provider as? PlexProvider {
