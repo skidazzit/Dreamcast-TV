@@ -216,9 +216,6 @@ struct GuideLayoutView: View {
         .ignoresSafeArea()
         .onAppear(perform: setupStartTime)
         .task {
-            if dataStore.epg.isEmpty {
-                await dataStore.loadEPG(startDate: timelineStart, hours: EPGTheme.initialGuideHours)
-            }
             seedFocus()
             await dataStore.refreshScheduledRecordings()
         }
