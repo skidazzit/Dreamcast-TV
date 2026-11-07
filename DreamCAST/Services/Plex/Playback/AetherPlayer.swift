@@ -1185,6 +1185,14 @@ final class AetherPlayer: PlayerProtocol {
         // The engine takes it only for SDR below 1080p and switches it off if it can't keep up.
         options.upscalesLowResolutionVideo = UserDefaults.standard.bool(forKey: Self.upscaleKey)
         options.audioDelaySeconds = AudioSync.seconds()
+        // tvOS terminates the app near 2 GiB. High-bitrate Plex files can fill
+        // the loopback segment history while AVPlayer holds its own decode buffers.
+        // Keep only the working playback window and a short forward lead for VOD.
+        // These are retention controls, not a hard process-memory limit.
+        if !isLive {
+            options.forwardBufferSegments = 4
+            options.sessionCacheByteBudget = 0
+        }
         // New content, so the previous item's aspect ratio describes nothing.
         // Reset HERE rather than when `currentItem` goes nil: the engine also
         // swaps its player for SAME-content reasons (audio track switch,
