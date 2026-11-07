@@ -170,6 +170,9 @@ struct EPGGuide: UIViewRepresentable {
     /// Put focus on this channel's live programme. A new token re-requests the
     /// same channel (the guide uses it when the player closes).
     var focusRequest: EPGFocusRequest? = nil
+    /// Startup autoplay focuses the selected group first. Down enters this
+    /// channel's live programme, without switching to All Channels.
+    var startupChannelID: String? = nil
     /// Long-press (held Select) on a programme: the programme menu. The frame
     /// is the pressed cell's, in window coordinates.
     var onLongPress: ((UnifiedChannel, UnifiedProgram?, CGRect?) -> Void)? = nil
@@ -286,12 +289,19 @@ struct EPGGuide: UIViewRepresentable {
             else { return nil }
             return channel.id
         }()
-        let requestedID = playingChannelID ?? focusRequest?.channelId
+        let requestedID = playingChannelID ?? startupChannelID ?? focusRequest?.channelId
         let preferredDownChannelID = requestedID.flatMap { id in
             channels.contains(where: { $0.id == id }) ? id : nil
         }
         uiView.setPreferredDownChannel(preferredDownChannelID) { [weak coordinator = context.coordinator] id in
             coordinator?.focusLiveProgramme(channelId: id)
+        }
+        if let startupChannelID,
+           context.coordinator.focusedStartupCategoryChannelID != startupChannelID,
+           let startupChannel = channels.first(where: { $0.id == startupChannelID }),
+           selectedCategory == startupChannel.groupTitle?.trimmingCharacters(in: .whitespacesAndNewlines) {
+            context.coordinator.focusedStartupCategoryChannelID = startupChannelID
+            uiView.focusSelectedCategory()
         }
         if let request = focusRequest, request != context.coordinator.handledFocusRequest {
             context.coordinator.handledFocusRequest = request
@@ -323,6 +333,7 @@ struct EPGGuide: UIViewRepresentable {
         private(set) var currentFocusedIsLive = false
         var lastTimelineStart: Date?
         var handledFocusRequest: EPGFocusRequest?
+        var focusedStartupCategoryChannelID: String?
 
         /// The time a vertical move keeps. Up/Down should land on what airs at
         /// the same time on the next channel; the focus engine instead picks by
@@ -869,6 +880,28 @@ final class EPGContainerView: UIView {
     func setPreferredDownChannel(_ id: String?, focus: @escaping (String) -> Void) {
         preferredDownChannelID = id
         focusPreferredDownChannel = focus
+    }
+
+    /// Start autoplay on its group pill. Moving Down from that pill then
+    /// focuses the channel via `preferredDownChannelID`.
+    func focusSelectedCategory(retries: Int = 20) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self else { return }
+            self.categoryBar.layoutIfNeeded()
+            guard let target = self.categoryBar.preferredFocusTarget(), self.window != nil,
+                  let system = UIFocusSystem.focusSystem(for: self) else {
+                if retries > 0 { self.focusSelectedCategory(retries: retries - 1) }
+                return
+            }
+            system.requestFocusUpdate(to: target)
+            system.updateFocusIfNeeded()
+            let focused = system.focusedItem as? UIView
+            if focused !== target && !(focused?.isDescendant(of: target) ?? false) {
+                if retries > 0 { self.focusSelectedCategory(retries: retries - 1) }
+            } else {
+                print("[GuideFocus] Startup category focus landed")
+            }
+        }
     }
 
     func configureCategories(
