@@ -1190,9 +1190,9 @@ final class GuideCategoryPillCell: UICollectionViewCell {
         super.init(frame: frame)
 
         pill.layer.cornerCurve = .continuous
-        pill.layer.shadowColor = UIColor.black.cgColor
-        pill.layer.shadowOffset = CGSize(width: 0, height: 8)
-        pill.layer.shadowRadius = 14
+        // The bar now clips offscreen groups. A focus shadow/scale would be
+        // cut at its bottom edge and appear as a dark underline on Apple TV.
+        pill.layer.shadowOpacity = 0
         pill.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(pill)
         titleLabel.textAlignment = .center
@@ -1263,8 +1263,9 @@ final class GuideCategoryPillCell: UICollectionViewCell {
             pill.backgroundColor = .clear
             titleLabel.textColor = UIColor.white.withAlphaComponent(0.72)
         }
-        pill.layer.shadowOpacity = focused ? 0.35 : 0
-        pill.transform = focused ? CGAffineTransform(scaleX: 1.1, y: 1.1) : .identity
+        // Color alone marks focus; no shadow or scale crosses the header edge.
+        pill.layer.shadowOpacity = 0
+        pill.transform = .identity
     }
 }
 
@@ -1636,6 +1637,8 @@ final class ChannelColumnView: UICollectionReusableView {
     private let nameLabel = UILabel()
     /// A permanent channel name beside the logo in the wider TV-guide column.
     private let sideNameLabel = UILabel()
+    private let nameViewport = UIView()
+    private var marqueeSignature: String?
     private var logoLoadTask: Task<Void, Never>?
     private var currentLogoURL: URL?
     private var logoHeight: NSLayoutConstraint!
@@ -1681,10 +1684,12 @@ final class ChannelColumnView: UICollectionReusableView {
 
         sideNameLabel.font = .systemFont(ofSize: 19, weight: .semibold)
         sideNameLabel.textColor = .white
-        sideNameLabel.numberOfLines = 2
-        sideNameLabel.lineBreakMode = .byTruncatingTail
-        sideNameLabel.translatesAutoresizingMaskIntoConstraints = false
-        box.addSubview(sideNameLabel)
+        sideNameLabel.numberOfLines = 1
+        sideNameLabel.lineBreakMode = .byClipping
+        nameViewport.clipsToBounds = true
+        nameViewport.translatesAutoresizingMaskIntoConstraints = false
+        box.addSubview(nameViewport)
+        nameViewport.addSubview(sideNameLabel)
 
         logoHeight = logo.heightAnchor.constraint(equalToConstant: 62)
         logoCenterX = logo.centerXAnchor.constraint(equalTo: box.centerXAnchor)
@@ -1696,9 +1701,10 @@ final class ChannelColumnView: UICollectionReusableView {
             nameLabel.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 8),
             nameLabel.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -8),
             nameLabel.centerYAnchor.constraint(equalTo: logo.centerYAnchor),
-            sideNameLabel.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 102),
-            sideNameLabel.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -8),
-            sideNameLabel.centerYAnchor.constraint(equalTo: logo.centerYAnchor),
+            nameViewport.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 102),
+            nameViewport.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -8),
+            nameViewport.centerYAnchor.constraint(equalTo: logo.centerYAnchor),
+            nameViewport.heightAnchor.constraint(equalToConstant: 34),
             occluder.topAnchor.constraint(equalTo: topAnchor),
             occluder.bottomAnchor.constraint(equalTo: bottomAnchor),
             occluder.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -1730,7 +1736,9 @@ final class ChannelColumnView: UICollectionReusableView {
         nameLabel.text = channel.name
         logoCenterX.constant = EPGTheme.tivimate ? -55 : 0
         sideNameLabel.text = channel.name
-        sideNameLabel.isHidden = !EPGTheme.tivimate
+        nameViewport.isHidden = !EPGTheme.tivimate
+        marqueeSignature = nil
+        setNeedsLayout()
         nameLabel.isHidden = EPGTheme.tivimate || (EPGTheme.showLogos && channel.logoURL != nil)
         logo.isHidden = !EPGTheme.showLogos
         if !EPGTheme.showLogos {
@@ -1774,6 +1782,8 @@ final class ChannelColumnView: UICollectionReusableView {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        sideNameLabel.layer.removeAnimation(forKey: "channelMarquee")
+        marqueeSignature = nil
         logoLoadTask?.cancel()
         logoLoadTask = nil
         currentLogoURL = nil
@@ -1790,6 +1800,32 @@ final class ChannelColumnView: UICollectionReusableView {
     override func layoutSubviews() {
         super.layoutSubviews()
         applyClip()
+        updateChannelMarquee()
+    }
+
+    /// Scroll long channel titles gently inside the name column. Using a
+    /// clipped label layer avoids moving any focus or collection-view cells.
+    private func updateChannelMarquee() {
+        guard EPGTheme.tivimate, !nameViewport.isHidden,
+              let title = sideNameLabel.text, !title.isEmpty,
+              nameViewport.bounds.width > 0 else { return }
+        let width = nameViewport.bounds.width
+        let textWidth = ceil((title as NSString).size(withAttributes: [.font: sideNameLabel.font!]).width)
+        let signature = "\(title)|\(Int(width))"
+        guard marqueeSignature != signature else { return }
+        marqueeSignature = signature
+        sideNameLabel.layer.removeAnimation(forKey: "channelMarquee")
+        sideNameLabel.frame = CGRect(x: 0, y: 0, width: max(width, textWidth), height: nameViewport.bounds.height)
+        let travel = textWidth - width
+        guard travel > 4 else { return }
+        let scroll = CABasicAnimation(keyPath: "transform.translation.x")
+        scroll.fromValue = 0
+        scroll.toValue = -(travel + 8)
+        scroll.duration = max(3, Double(travel + 8) / 28)
+        scroll.beginTime = CACurrentMediaTime() + 1.2
+        scroll.autoreverses = true
+        scroll.repeatCount = .infinity
+        sideNameLabel.layer.add(scroll, forKey: "channelMarquee")
     }
     private func applyClip() {
         let gap = EPGTheme.cellSpacing
