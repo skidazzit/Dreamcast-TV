@@ -8,7 +8,7 @@ import Foundation
 enum InputConfig {
     static let holdThreshold: TimeInterval = 0.4
     static let seekCoalesceInterval: TimeInterval = 0.05
-    static let actionDedupeWindow: TimeInterval = 0.08
+    nonisolated static let actionDedupeWindow: TimeInterval = 0.08
     static let transportDedupeWindow: TimeInterval = 0.35
     /// Cross-source window that merges two `.scrubNudge`s from one hold (a press plus an
     /// MPRemoteCommand seek) so the shuttle steps once. Same-source re-clicks are never
