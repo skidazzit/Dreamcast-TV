@@ -732,13 +732,13 @@ struct UniversalPlayerView: View {
             inputTarget = target
             inputCoordinator.target = target
 
-            remoteInput.isPostVideoCheck = { [weak viewModel] in
+            remoteInput.isPostVideoCheck = { [weak viewModel = viewModel] in
                 viewModel?.postVideoState != .hidden
             }
-            remoteInput.isPausedCheck = { [weak viewModel] in
+            remoteInput.isPausedCheck = { [weak viewModel = viewModel] in
                 viewModel?.playbackState == .paused
             }
-            remoteInput.isControlsFocusCheck = { [weak viewModel] in
+            remoteInput.isControlsFocusCheck = { [weak viewModel = viewModel] in
                 guard let viewModel else { return false }
                 // A presented rail panel (Info, Up Next, Insights) owns Left/Right
                 // for its own content, and focus inside it is NOT inside the rail,
@@ -748,13 +748,13 @@ struct UniversalPlayerView: View {
                 // panel (`contentOwnsPresses`), and this is its twin.
                 return viewModel.controlsFocusActive || viewModel.isRailPanelOpen
             }
-            remoteInput.isScrubberFocusCheck = { [weak viewModel] in
+            remoteInput.isScrubberFocusCheck = { [weak viewModel = viewModel] in
                 viewModel?.scrubberOwnsFocus ?? false
             }
-            remoteInput.durationCheck = { [weak viewModel] in
+            remoteInput.durationCheck = { [weak viewModel = viewModel] in
                 viewModel?.duration ?? 0
             }
-            remoteInput.isSkipPillFocusCheck = { [weak viewModel] in
+            remoteInput.isSkipPillFocusCheck = { [weak viewModel = viewModel] in
                 viewModel?.skipPillOwnsFocus ?? false
             }
             remoteInput.onAction = { [inputCoordinator] action, source in
