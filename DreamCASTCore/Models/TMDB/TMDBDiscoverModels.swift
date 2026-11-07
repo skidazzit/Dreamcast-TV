@@ -10,7 +10,7 @@
 
 import Foundation
 
-enum TMDBDiscoverSection: String, CaseIterable, Identifiable, Sendable {
+nonisolated enum TMDBDiscoverSection: String, CaseIterable, Identifiable, Sendable {
     case movieTrending
     case moviePopular
     case movieNowPlaying
