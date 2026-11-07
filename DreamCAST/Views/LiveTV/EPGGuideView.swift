@@ -1274,7 +1274,9 @@ extension GuideCategoryBarView: UICollectionViewDataSource,
             onAction?()
             return
         }
-        // Focus already switched the category; Select goes to its channels.
+        // Select explicitly applies the pill even if tvOS restored stale focus
+        // after startup autoplay chose a different group.
+        if item.group != selectedGroup { onSelect?(item.group) }
         onMoveDown?()
     }
 
@@ -1285,6 +1287,10 @@ extension GuideCategoryBarView: UICollectionViewDataSource,
     ) {
         guard let next = context.nextFocusedIndexPath else { return }
         lastFocusedIndexPath = next
+        // Entering the bar from the player or guide is not a group change.
+        // tvOS can briefly restore the old All Channels pill on startup.
+        // Only Left/Right movement between two pills changes groups on focus.
+        guard context.previouslyFocusedIndexPath != nil else { return }
         if let item = items[safe: next.item],
            Self.selectsOnFocus(isAction: item.isAction, group: item.group, selected: selectedGroup) {
             onSelect?(item.group)
