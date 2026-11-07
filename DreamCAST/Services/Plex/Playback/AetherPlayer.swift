@@ -58,6 +58,12 @@ final class AetherPlayer: PlayerProtocol {
     /// This samples existing counters and never retains video data.
     private var lastMemoryTraceAt: TimeInterval = 0
 
+    /// The census switch is process-wide. Arm it only once when running from
+    /// Xcode so parallel Live TV players do not restart its trigger watcher.
+    #if DEBUG
+    private static var hasArmedMemoryCensus = false
+    #endif
+
     /// Mirrors engine.$isSubtitleActive. True when any subtitle track
     /// (embedded or sidecar) is selected and the engine has cue data.
     @Published private(set) var isSubtitleActive: Bool = false
@@ -189,6 +195,23 @@ final class AetherPlayer: PlayerProtocol {
         } catch {
             fatalError("AetherEngine init failed: \(error)")
         }
+        #if DEBUG
+        if !Self.hasArmedMemoryCensus {
+            Self.hasArmedMemoryCensus = true
+            // This probes existing malloc and VM counters. A 96 MB jump
+            // captures where 4K playback grows, including spikes that land
+            // between Aether's regular 30-second memory log lines.
+            // No capture cap: earlier sessions exhausted the default before
+            // tvOS reached its 2 GB memory limit.
+            AetherEngine.setLargeAllocationCensusEnabled(
+                true,
+                triggerThresholdMB: 96,
+                triggerPollHz: 4,
+                triggerCaptureCap: 0
+            )
+            print("[PlexMemoryTrace] large-allocation census armed (Debug only)")
+        }
+        #endif
         // The engine otherwise uses system trust alone, so a server the API
         // session accepts would browse and never play (#337).
         EngineTLS.serverTrustEvaluator = { PlexCertificateDelegate.trustsServer($0) }
