@@ -963,14 +963,14 @@ class LiveTVDataStore: ObservableObject {
 
     // MARK: - Channel Loading
 
-    /// Fetches every provider in parallel and merges one sorted lineup. Off the
-    /// main actor: a 100k-channel M3U without `tvg-chno` sorts by Unicode collation.
+    /// Fetches providers in parallel, but retains their original channel order.
+    /// Task-group completion order must not change the lineup between refreshes.
     private nonisolated static func fetchAndMergeChannels(
         from providerEntries: [(key: String, value: any LiveTVProvider)],
         refreshing: Bool,
         onProgress: (@Sendable (Int, Int) -> Void)? = nil
     ) async -> (channels: [UnifiedChannel], errors: [String]) {
-        var allChannels: [UnifiedChannel] = []
+        var channelsBySource: [String: [UnifiedChannel]] = [:]
         var errors: [String] = []
 
         await withTaskGroup(of: (String, Result<[UnifiedChannel], Error>).self) { group in
@@ -991,7 +991,7 @@ class LiveTVDataStore: ObservableObject {
             for await (sourceId, result) in group {
                 switch result {
                 case .success(let channels):
-                    allChannels.append(contentsOf: channels)
+                    channelsBySource[sourceId] = channels
                 case .failure(let error):
                     errors.append("\(sourceId): \(error.localizedDescription)")
                     DiagLog.error(.liveTV, "Channels failed for source \(sourceId.prefix(12)): \(DiagLog.describe(error))")
@@ -1001,21 +1001,17 @@ class LiveTVDataStore: ObservableObject {
             }
         }
 
+        let allChannels = channelsInSourceOrder(channelsBySource, sourceIDs: providerEntries.map(\.key))
         DiagLog.notice(.liveTV, "Channels loaded: \(allChannels.count), failed sources: \(errors.count)")
-        // Sort channels by number, then name
-        allChannels.sort { c1, c2 in
-            if let n1 = c1.channelNumber, let n2 = c2.channelNumber {
-                return n1 < n2
-            } else if c1.channelNumber != nil {
-                return true
-            } else if c2.channelNumber != nil {
-                return false
-            } else {
-                return c1.name < c2.name
-            }
-        }
-
         return (allChannels, errors)
+    }
+
+    /// The M3U/Xtream provider already returns playlist order. Keep it intact
+    /// even if another source's network request finishes sooner.
+    nonisolated static func channelsInSourceOrder(
+        _ fetched: [String: [UnifiedChannel]], sourceIDs: [String]
+    ) -> [UnifiedChannel] {
+        sourceIDs.flatMap { fetched[$0] ?? [] }
     }
 
     /// Load channels from all sources
@@ -1039,7 +1035,10 @@ class LiveTVDataStore: ObservableObject {
 
         // Snapshot providers up-front so the task body never touches the
         // @MainActor-bound dictionary.
-        let providerEntries = Array(providers)
+        let providerEntries = providers.sorted {
+            let order = $0.value.displayName.localizedStandardCompare($1.value.displayName)
+            return order == .orderedSame ? $0.key < $1.key : order == .orderedAscending
+        }
 
         // Detached, not `Task {}`: a Task created inside a @MainActor method
         // inherits MainActor isolation, which would put the merge and sort back
@@ -1090,7 +1089,10 @@ class LiveTVDataStore: ObservableObject {
 
         // Detached for the same reason as loadChannels — this one is reached
         // from a Settings action, so the freeze would be squarely on a tap.
-        let providerEntries = Array(providers)
+        let providerEntries = providers.sorted {
+            let order = $0.value.displayName.localizedStandardCompare($1.value.displayName)
+            return order == .orderedSame ? $0.key < $1.key : order == .orderedAscending
+        }
         let merged = await Task.detached { [providerEntries] in
             await Self.fetchAndMergeChannels(from: providerEntries, refreshing: true, onProgress: { [weak self] done, total in
                 Task { @MainActor [weak self] in
