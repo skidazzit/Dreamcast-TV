@@ -208,9 +208,9 @@ final class AetherPlayer: PlayerProtocol {
         // larger safety margin only after repeated starvation, not every zap.
         if let player = currentAVPlayer, let item = player.currentItem {
             player.automaticallyWaitsToMinimizeStalling = true
-            item.preferredForwardBufferDuration = 12
+            item.preferredForwardBufferDuration = 24
             liveBufferHealth.didApplyBoost()
-            DiagLog.notice(.playback, "Live transport unstable: raised AVPlayer forward buffer to 12s")
+            DiagLog.notice(.playback, "Live transport unstable: raised AVPlayer forward buffer to 24s")
         }
     }
 
@@ -1664,7 +1664,7 @@ final class AetherPlayer: PlayerProtocol {
 }
 
 /// Detects sustained transport starvation rather than reacting to one bad packet.
-/// Raw AVIO read times are not exposed by the engine, so low forward buffer,
+    /// Raw AVIO read times are not exposed by the engine, so low forward buffer,
 /// dropped frames and player waiting are the available live signals.
 struct LiveBufferHealth {
     private(set) var consecutiveBadSamples = 0
@@ -1675,11 +1675,11 @@ struct LiveBufferHealth {
         if let droppedFrames {
             defer { lastDroppedFrames = droppedFrames }
             let newlyDropped = max(0, droppedFrames - (lastDroppedFrames ?? droppedFrames))
-            let lowBuffer = forwardSeconds.map { $0.isFinite && $0 < 3 } ?? false
+            let lowBuffer = forwardSeconds.map { $0.isFinite && $0 < 6 } ?? false
             consecutiveBadSamples = (waiting || lowBuffer || newlyDropped >= 2)
                 ? min(consecutiveBadSamples + 1, 3) : 0
         } else {
-            let lowBuffer = forwardSeconds.map { $0.isFinite && $0 < 3 } ?? false
+            let lowBuffer = forwardSeconds.map { $0.isFinite && $0 < 6 } ?? false
             consecutiveBadSamples = (waiting || lowBuffer)
                 ? min(consecutiveBadSamples + 1, 3) : 0
         }
