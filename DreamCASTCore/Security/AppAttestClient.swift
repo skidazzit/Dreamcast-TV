@@ -53,7 +53,7 @@ actor AppAttestClient {
         self.keyId = Keychain.load(Self.keychainAccount)
     }
 
-    private static let keychainAccount = "app-attest-key-id"
+    nonisolated private static let keychainAccount = "app-attest-key-id"
 
     /// True on real hardware, false in the Simulator (no Secure Enclave).
     nonisolated var isSupported: Bool { DCAppAttestService.shared.isSupported }
@@ -294,7 +294,7 @@ enum AttestClientError: Error {
 /// The key id is not secret (it's a public identifier), but it must SURVIVE
 /// app updates and be device-local. UserDefaults would be wiped on reinstall,
 /// forcing a needless re-attest; the Keychain persists.
-private enum Keychain {
+private nonisolated enum Keychain {
     private static let service = "com.gstudios.dreamcast.attest"
 
     static func save(_ account: String, value: String) {
