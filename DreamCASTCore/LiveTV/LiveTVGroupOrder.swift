@@ -8,6 +8,20 @@ import Foundation
 /// ignored until they return. A saved custom order still takes precedence.
 enum LiveTVGroupOrder {
     static let storageKey = "liveTVPlaylistGroupOrder"
+    static let hiddenStorageKey = "liveTVHiddenGroups"
+
+    static func hidden() -> Set<String> {
+        guard let data = UserDefaults.standard.data(forKey: hiddenStorageKey),
+              let groups = try? JSONDecoder().decode([String].self, from: data) else { return [] }
+        return Set(groups)
+    }
+
+    static func setHidden(_ group: String, hidden: Bool) {
+        var groups = self.hidden()
+        if hidden { groups.insert(group) } else { groups.remove(group) }
+        guard let data = try? JSONEncoder().encode(groups.sorted()) else { return }
+        UserDefaults.standard.set(data, forKey: hiddenStorageKey)
+    }
 
     static func saved() -> [String] {
         guard let data = UserDefaults.standard.string(forKey: storageKey)?.data(using: .utf8),
