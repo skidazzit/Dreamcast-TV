@@ -56,8 +56,16 @@ final class SpeechModelStore: ObservableObject {
             .appendingPathComponent(folderName, isDirectory: true)
     }
 
+    /// BackgroundAssets traps instead of throwing when its app-group ID is
+    /// missing. Free-device builds do not have that entitlement or Info key.
+    nonisolated private static var canUseAssetPacks: Bool {
+        guard let group = Bundle.main.object(forInfoDictionaryKey: "BAAppGroupID") as? String else { return false }
+        return !group.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     /// The model folder inside the asset pack, when the pack is on the device.
     nonisolated private static var packDirectory: URL? {
+        guard canUseAssetPacks else { return nil }
         guard let file = try? AssetPackManager.shared.url(for: FilePath("\(folderName)/config.json")) else { return nil }
         let folder = file.deletingLastPathComponent()
         return AsrModels.modelsExist(at: folder, version: version) ? folder : nil
@@ -134,6 +142,10 @@ final class SpeechModelStore: ObservableObject {
     }
 
     nonisolated private static func downloadPack(progress: @escaping @Sendable (Double) -> Void) async throws {
+        guard canUseAssetPacks else {
+            throw NSError(domain: "SpeechModelStore", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "Asset packs are unavailable in this build"])
+        }
         let manager = AssetPackManager.shared
         let pack = try await manager.assetPack(withID: assetPackID)
         let updates = Task {
