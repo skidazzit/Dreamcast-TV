@@ -163,6 +163,7 @@ struct GuideLayoutView: View {
     /// or the guide goes away.
     @State private var miniSession: LiveTVSessionHandoff?
     @AppStorage("liveTVKeepPlayingInGuide") private var keepPlayingInGuide = true
+    @AppStorage("liveTVGuideArtwork") private var guideArtwork = false
 
     // Backdrop transition state. Each image is one layer (wash plus crisp
     // artwork), and the incoming layer fades in over the outgoing one.
@@ -181,10 +182,11 @@ struct GuideLayoutView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .topLeading) {
+                EPGTheme.background.ignoresSafeArea()
                 // No custom base: when the focused programme has no artwork the
                 // stock system background (the same one Settings uses) shows
                 // through. When artwork exists, `ambiance` paints it on top.
-                ambiance
+                if guideArtwork { ambiance }
 
                 if channels.isEmpty {
                     ProgressView()
@@ -277,7 +279,7 @@ struct GuideLayoutView: View {
                     focusedProgram = program ?? channel.flatMap { dataStore.getCurrentProgram(for: $0) }
                 },
                 onSelect: { channel, _ in selectChannel(channel) },
-                transparent: true,                 // dark see-through boxes + rounded clipping
+                transparent: !EPGTheme.tivimate,
                 // Reserve the info bar + category bar above the ruler.
                 topInset: EPGTheme.infoBarHeight + EPGTheme.categoryBarHeight,
                 focusRequest: gridFocusRequest,

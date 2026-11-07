@@ -497,7 +497,24 @@ enum SettingsContent {
         [
             SettingsRowItem(id: "defaultLayout", title: "Default Layout",
                             kind: .cycle(value: { (LiveTVLayout(rawValue: SettingsStore.string("liveTVLayout", default: LiveTVLayout.fallback.rawValue)) ?? .fallback).description },
-                                         next: { cycleLiveTVLayout() }))
+                                         next: { cycleLiveTVLayout() })),
+            .header("TV Guide Appearance"),
+            SettingsRowItem(id: "guideStyle", title: "Guide Style",
+                            kind: .cycle(value: { EPGTheme.tivimate ? "TiviMate-style" : "Classic" },
+                                         next: { SettingsStore.setBool("liveTVTiviMateGuide", !EPGTheme.tivimate) })),
+            SettingsRowItem(id: "guideTimeScale", title: "Guide Timeline",
+                            kind: .cycle(value: { "\(EPGTheme.timeScale) minutes" },
+                                         next: {
+                                             let options = [90, 120, 180]
+                                             let index = options.firstIndex(of: EPGTheme.timeScale) ?? 1
+                                             SettingsStore.setInt("liveTVGuideTimeScale", options[(index + 1) % options.count])
+                                         })),
+            SettingsRowItem(id: "guideRowSize", title: "Guide Row Size",
+                            kind: .cycle(value: { ["Compact", "Normal", "Large"][min(max(EPGTheme.rowSize, 0), 2)] },
+                                         next: { SettingsStore.setInt("liveTVGuideRowSize", (EPGTheme.rowSize + 1) % 3) })),
+            toggle("guideChannelLogos", "Channel Logos", key: "liveTVGuideShowLogos", default: true),
+            toggle("guideArtwork", "Program Artwork Background", key: "liveTVGuideArtwork", default: false),
+            toggle("guideClock", "Guide Clock", key: "liveTVGuideShowClock", default: true)
         ]
     }
 

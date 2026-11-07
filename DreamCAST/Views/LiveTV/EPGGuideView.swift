@@ -15,43 +15,54 @@ import UIKit
 
 // MARK: - Theme
 
-/// Colors and layout metrics for the guide, matching the PlexGuide look.
+/// Guide presets. The dense, dark TV-guide preset is the default; the
+/// original DreamCAST layout remains available from Live TV settings.
 enum EPGTheme {
+    static var tivimate: Bool { SettingsStore.bool("liveTVTiviMateGuide", default: true) }
+    static var showLogos: Bool { SettingsStore.bool("liveTVGuideShowLogos", default: true) }
+    static var showClock: Bool { SettingsStore.bool("liveTVGuideShowClock", default: true) }
+    static var rowSize: Int { SettingsStore.int("liveTVGuideRowSize", default: 1) }
+    static var timeScale: Int { SettingsStore.int("liveTVGuideTimeScale", default: 120) }
     // MARK: Colors
-    static let background = Color(red: 0.10, green: 0.10, blue: 0.115)
-    static let surface = Color(red: 0.21, green: 0.21, blue: 0.23)
+    static var background: Color { tivimate ? Color(red: 0.055, green: 0.065, blue: 0.085) : Color(red: 0.10, green: 0.10, blue: 0.115) }
+    static var surface: Color { tivimate ? Color(red: 0.13, green: 0.15, blue: 0.19) : Color(red: 0.21, green: 0.21, blue: 0.23) }
     /// Channel column box: lighter than the background, darker than guide cells.
-    static let columnFill = Color(red: 0.17, green: 0.17, blue: 0.19)
+    static var columnFill: Color { tivimate ? Color(red: 0.09, green: 0.11, blue: 0.15) : Color(red: 0.17, green: 0.17, blue: 0.19) }
     /// Shared corner radius for every guide box (timeline, date, logo, cells)
     /// and the rounded clip where cells tuck under the column / ruler. Large
     /// enough that the continuous curve reads as a squircle.
-    static let columnCorner: CGFloat = 14
+    static var columnCorner: CGFloat { tivimate ? 5 : 14 }
     static let textPrimary = Color.white
     static let textSecondary = Color.white.opacity(0.55)
 
     // MARK: Guide layout metrics (in points)
     /// Horizontal density of the timeline. Tuned so ~4 hours of programming is
     /// visible at once.
-    static let pointsPerMinute: CGFloat = 7.5
+    static var pointsPerMinute: CGFloat {
+        tivimate ? 1440 / CGFloat(max(90, timeScale)) : 7.5
+    }
     /// Width of the sticky channel column on the left.
-    static let channelColumnWidth: CGFloat = 129
+    static var channelColumnWidth: CGFloat { tivimate ? 220 : 129 }
     /// Height of each channel row.
-    static let rowHeight: CGFloat = 94
+    static var rowHeight: CGFloat {
+        guard tivimate else { return 94 }
+        return [68, 82, 100][min(max(rowSize, 0), 2)]
+    }
     /// Height of the sticky timeline header.
-    static let timelineHeight: CGFloat = 54
+    static var timelineHeight: CGFloat { tivimate ? 48 : 54 }
     /// Height of the slim rounded boxes inside the timeline / date row.
-    static let timelineBoxHeight: CGFloat = 34
+    static var timelineBoxHeight: CGFloat { tivimate ? 32 : 34 }
     /// The guide's own page margin. It ignores the safe area and sits this
     /// far in from the leading, trailing and top edges.
     static let pageMargin: CGFloat = 52
     /// The corner player after Back: 16:9 in 16pt width steps, top-right at
     /// the page margin. The info bar's poster shares its height.
-    static let miniPlayerSize = CGSize(width: 528, height: 297)
+    static var miniPlayerSize: CGSize { tivimate ? CGSize(width: 340, height: 191) : CGSize(width: 528, height: 297) }
     /// Height of the fixed info bar (top layer) the grid scrolls beneath: the
     /// page margin, the poster / corner-player band, and a small gap.
-    static let infoBarHeight: CGFloat = pageMargin + miniPlayerSize.height + 11
+    static var infoBarHeight: CGFloat { pageMargin + miniPlayerSize.height + 11 }
     /// Height of the UIKit category pills between the info bar and time ruler.
-    static let categoryBarHeight: CGFloat = 64
+    static var categoryBarHeight: CGFloat { tivimate ? 56 : 64 }
     /// Gap between the info bar and the time ruler.
     static let rulerGap: CGFloat = 0
     /// Extra gap between the time ruler and the first row.
@@ -61,7 +72,7 @@ enum EPGTheme {
     /// Top content inset of the grid (first row rests below the ruler + fade).
     static var gridTopInset: CGFloat { rulerTop + timelineHeight + gridTopGap }
     /// Vertical gap between rows / horizontal gap between cells.
-    static let cellSpacing: CGFloat = 4
+    static var cellSpacing: CGFloat { tivimate ? 2 : 4 }
     /// Longest the timeline grows, starting at the current half hour.
     static let timelineSpanHours = LiveTVDataStore.epgMaxHoursAhead
     /// EPG hours fetched up front when the guide first opens. Small so the grid
@@ -745,6 +756,7 @@ final class EPGContainerView: UIView {
     }
 
     func setClock(_ date: Date) {
+        clockLabel.isHidden = !EPGTheme.showClock
         let text = Self.clockFormatter.string(from: date)
         if clockLabel.text != text { clockLabel.text = text }
     }
@@ -1593,12 +1605,14 @@ final class ProgramCellView: UICollectionViewCell, KeepsUpAtTop {
         // Unfocused: the app's glass row tint (faint white fill, hairline
         // edge), not a live UIGlassEffect per cell, which would re-sample the
         // backdrop under ~50 scrolling cells every frame.
-        card.backgroundColor = focused ? UIColor(white: 0.96, alpha: 1) : UIColor(white: 1, alpha: 0.08)
+        card.backgroundColor = focused
+            ? (EPGTheme.tivimate ? UIColor(red: 0.15, green: 0.48, blue: 0.83, alpha: 1) : UIColor(white: 0.96, alpha: 1))
+            : (EPGTheme.tivimate ? UIColor(red: 0.15, green: 0.18, blue: 0.23, alpha: 1) : UIColor(white: 1, alpha: 0.08))
         card.layer.borderWidth = focused ? 0 : 1
         card.layer.borderColor = UIColor(white: 1, alpha: 0.1).cgColor
-        titleLabel.textColor = focused ? UIColor(white: 0.08, alpha: 1) : .white
-        subtitleLabel.textColor = focused ? UIColor(white: 0.08, alpha: 0.6) : UIColor(white: 1, alpha: 0.7)
-        tagLabel.textColor = focused ? UIColor(white: 0.08, alpha: 0.8) : .white
+        titleLabel.textColor = focused && !EPGTheme.tivimate ? UIColor(white: 0.08, alpha: 1) : .white
+        subtitleLabel.textColor = focused && !EPGTheme.tivimate ? UIColor(white: 0.08, alpha: 0.6) : UIColor(white: 1, alpha: 0.7)
+        tagLabel.textColor = focused && !EPGTheme.tivimate ? UIColor(white: 0.08, alpha: 0.8) : .white
         tagLabel.backgroundColor = focused ? UIColor(white: 0, alpha: 0.1) : UIColor(white: 1, alpha: 0.2)
     }
 }
@@ -1613,9 +1627,12 @@ final class ChannelColumnView: UICollectionReusableView {
     /// The channel's name, in place of a logo it does not have. Without this a
     /// playlist with no `tvg-logo` gave the column nothing to identify a row by.
     private let nameLabel = UILabel()
+    /// A permanent channel name beside the logo in the wider TV-guide column.
+    private let sideNameLabel = UILabel()
     private var logoLoadTask: Task<Void, Never>?
     private var currentLogoURL: URL?
     private var logoHeight: NSLayoutConstraint!
+    private var logoCenterX: NSLayoutConstraint!
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -1655,7 +1672,15 @@ final class ChannelColumnView: UICollectionReusableView {
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
         box.addSubview(nameLabel)
 
+        sideNameLabel.font = .systemFont(ofSize: 19, weight: .semibold)
+        sideNameLabel.textColor = .white
+        sideNameLabel.numberOfLines = 2
+        sideNameLabel.lineBreakMode = .byTruncatingTail
+        sideNameLabel.translatesAutoresizingMaskIntoConstraints = false
+        box.addSubview(sideNameLabel)
+
         logoHeight = logo.heightAnchor.constraint(equalToConstant: 62)
+        logoCenterX = logo.centerXAnchor.constraint(equalTo: box.centerXAnchor)
         let gap = EPGTheme.cellSpacing
         NSLayoutConstraint.activate([
             numberLabel.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 4),
@@ -1664,6 +1689,9 @@ final class ChannelColumnView: UICollectionReusableView {
             nameLabel.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 8),
             nameLabel.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -8),
             nameLabel.centerYAnchor.constraint(equalTo: logo.centerYAnchor),
+            sideNameLabel.leadingAnchor.constraint(equalTo: box.leadingAnchor, constant: 102),
+            sideNameLabel.trailingAnchor.constraint(equalTo: box.trailingAnchor, constant: -8),
+            sideNameLabel.centerYAnchor.constraint(equalTo: logo.centerYAnchor),
             occluder.topAnchor.constraint(equalTo: topAnchor),
             occluder.bottomAnchor.constraint(equalTo: bottomAnchor),
             occluder.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -1674,7 +1702,7 @@ final class ChannelColumnView: UICollectionReusableView {
             box.leadingAnchor.constraint(equalTo: leadingAnchor, constant: gap),
             box.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -gap),
 
-            logo.centerXAnchor.constraint(equalTo: box.centerXAnchor),
+            logoCenterX,
             logo.topAnchor.constraint(equalTo: box.topAnchor, constant: 8),
             logo.widthAnchor.constraint(equalToConstant: 86),
             logoHeight,
@@ -1693,7 +1721,20 @@ final class ChannelColumnView: UICollectionReusableView {
         numberLabel.isHidden = number == nil
         logoHeight.constant = number == nil ? 70 : 52
         nameLabel.text = channel.name
-        nameLabel.isHidden = channel.logoURL != nil
+        logoCenterX.constant = EPGTheme.tivimate ? -55 : 0
+        sideNameLabel.text = channel.name
+        sideNameLabel.isHidden = !EPGTheme.tivimate
+        nameLabel.isHidden = EPGTheme.tivimate || (EPGTheme.showLogos && channel.logoURL != nil)
+        logo.isHidden = !EPGTheme.showLogos
+        if !EPGTheme.showLogos {
+            // Without a logo, the TV-guide row is all text.
+            nameLabel.isHidden = EPGTheme.tivimate
+            logoLoadTask?.cancel()
+            logoLoadTask = nil
+            currentLogoURL = nil
+            logo.image = nil
+            return
+        }
 
         // Reused cells get reconfigured rapidly during fast guide scrolling.
         // Track the URL each in-flight load belongs to and cancel on change,
@@ -1719,7 +1760,7 @@ final class ChannelColumnView: UICollectionReusableView {
             else { return }
             self.logo.image = image
             // A logo that failed to load identifies nothing; show the name.
-            self.nameLabel.isHidden = image != nil
+            self.nameLabel.isHidden = EPGTheme.tivimate || image != nil
             self.logoLoadTask = nil
         }
     }
@@ -1912,7 +1953,7 @@ struct GuideInfoBar: View {
                         .foregroundStyle(EPGTheme.textSecondary)
                 }
                 Text(program?.title ?? String(localized: "Select a programme"))
-                    .font(.system(size: 44, weight: .bold))
+                    .font(.system(size: EPGTheme.tivimate ? 34 : 44, weight: .bold))
                     .foregroundStyle(EPGTheme.textPrimary)
                     .lineLimit(1)
                 if let program {
