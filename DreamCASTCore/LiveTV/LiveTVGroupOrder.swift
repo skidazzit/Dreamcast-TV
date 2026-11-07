@@ -4,7 +4,8 @@
 import Foundation
 
 /// One saved order for Live TV category groups across playlist refreshes.
-/// New groups are appended alphabetically; removed groups are ignored until they return.
+/// New groups keep the order first seen in the playlist; removed groups are
+/// ignored until they return. A saved custom order still takes precedence.
 enum LiveTVGroupOrder {
     static let storageKey = "liveTVPlaylistGroupOrder"
 
@@ -15,10 +16,11 @@ enum LiveTVGroupOrder {
     }
 
     nonisolated static func ordered(_ groups: [String], saved: [String]) -> [String] {
-        let available = Set(groups.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })
+        let orderedInput = groups.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        let available = Set(orderedInput)
         var seen = Set<String>()
         let preferred = saved.filter { available.contains($0) && seen.insert($0).inserted }
-        return preferred + available.subtracting(seen).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        return preferred + orderedInput.filter { seen.insert($0).inserted }
     }
 
     static func move(_ group: String, up: Bool, among groups: [String]) {
