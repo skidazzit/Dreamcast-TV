@@ -14,11 +14,6 @@ import UIKit
 /// - DREAMCAST_SCRUBPROBE=barstates (optional DREAMCAST_SCRUBPROBE_STRIPES=1): AVKit's bar
 ///   focus dim, scans and skips via its private selectors; `dreamcast-bar` renders ours.
 final class AVKitScrubProbe: NSObject {
-    private static var currentScreenBounds: CGRect {
-        UIApplication.shared.connectedScenes
-            .compactMap { ($0 as? UIWindowScene)?.screen.bounds }
-            .first ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
-    }
     private static var current: AVKitScrubProbe?
 
     private let playerVC = AVPlayerViewController()
@@ -331,6 +326,11 @@ final class AVKitScrubProbe: NSObject {
 /// `scrubprobe-state.txt`, then holds so a host script can screenshot it.
 @MainActor
 enum ScrubStatesProbe {
+    private static var currentScreenBounds: CGRect {
+        UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.screen.bounds }
+            .first ?? CGRect(x: 0, y: 0, width: 1920, height: 1080)
+    }
     static let streamURL = URL(string: "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8")!
     static let hold: Duration = .seconds(4)
     private static var keep: [AnyObject] = []
