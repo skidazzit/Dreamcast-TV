@@ -1042,9 +1042,11 @@ private struct DreamCASTStartupSplash: View {
         ZStack {
             Color(red: 0.025, green: 0.035, blue: 0.065)
             VStack(spacing: 32) {
-                Image(systemName: "play.rectangle.fill")
-                    .font(.system(size: 88, weight: .light))
-                    .foregroundStyle(.cyan)
+                Image("AppIconArt-standard")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 420, height: 240)
+                    .accessibilityHidden(true)
                 Text("DreamCAST")
                     .font(.system(size: 64, weight: .bold, design: .rounded))
                     .foregroundStyle(.white)
