@@ -59,7 +59,7 @@ extension JellyfinProvider: PhotoProvider {
     /// What a "homevideos" view holds, by two counts with no items.
     /// Throws on a failed probe, so the store keeps the libraries it had.
     func homeVideosContent(libraryID: String) async throws -> HomeVideosContent {
-        func count(_ type: String) async throws -> Int {
+        @Sendable func count(_ type: String) async throws -> Int {
             let result: JFQueryResult = try await client.get("Items", [
                 URLQueryItem(name: "parentId", value: libraryID),
                 URLQueryItem(name: "recursive", value: "true"),
@@ -84,7 +84,7 @@ extension JellyfinProvider: PhotoProvider {
 
         // Asked for once. Without `recursive=false` a library id recurses by
         // itself: nested albums and the library's own Folder join the root.
-        func folders() async throws -> JFQueryResult? {
+        @Sendable func folders() async throws -> JFQueryResult? {
             guard page.offset == 0 else { return nil }
             return try await client.get("Items", [
                 parent, fields,
