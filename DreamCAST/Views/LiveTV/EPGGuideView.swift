@@ -817,10 +817,10 @@ final class EPGContainerView: UIView {
 
         miniPlayer.isFocusable = true
         miniPlayer.isHidden = true
-        // The guide positions this view by setting bounds and center in
-        // layoutSubviews. Disable autoresizing constraints: at first mount its
-        // frame is zero and UIKit otherwise constrains its width to zero.
-        miniPlayer.translatesAutoresizingMaskIntoConstraints = false
+        // Keep the frame-based video surface sizing used by the handoff player.
+        // Seed its size before adding it so the first layout never starts at
+        // zero width (which also conflicted with the caption's constraints).
+        miniPlayer.frame = CGRect(origin: .zero, size: EPGTheme.miniPlayerSize)
         let select = UITapGestureRecognizer(target: self, action: #selector(selectMiniPlayer))
         select.allowedPressTypes = [NSNumber(value: UIPress.PressType.select.rawValue)]
         miniPlayer.addGestureRecognizer(select)
