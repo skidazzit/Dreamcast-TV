@@ -211,7 +211,8 @@ final class AetherPlayer: PlayerProtocol {
         lastMemoryTraceAt = now
         let availableMB = os_proc_available_memory() / 1_048_576
         let telemetry = engine.diagnostics.liveTelemetry
-        let cachedMB = telemetry.map { $0.cachedBytes / 1_048_576 } ?? -1
+        let cachedBytes: Int64? = telemetry?.cachedBytes
+        let cachedMB = cachedBytes.map { $0 / 1_048_576 } ?? -1
         let rssMB = telemetry?.rssMb ?? -1
         let itemStatus = engine.currentAVPlayer?.currentItem == nil ? "none" : "active"
         print("[PlexMemoryTrace] availableMB=\(availableMB) rssMB=\(rssMB) cachedMB=\(cachedMB) playerItem=\(itemStatus)")
