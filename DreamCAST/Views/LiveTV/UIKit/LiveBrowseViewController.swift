@@ -124,7 +124,6 @@ final class LiveBrowseViewController: UIViewController {
             .store(in: &cancellables)
 
         Task { @MainActor in
-            if store.channels.isEmpty { await store.loadChannels() }
             if store.epg.isEmpty { await store.loadEPG(startDate: Date(), hours: 12) }
             await store.refreshScheduledRecordings()
         }
