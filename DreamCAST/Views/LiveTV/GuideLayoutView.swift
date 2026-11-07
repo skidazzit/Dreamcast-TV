@@ -290,6 +290,7 @@ struct GuideLayoutView: View {
                 // Reserve the info bar + category bar above the ruler.
                 topInset: EPGTheme.infoBarHeight + EPGTheme.categoryBarHeight,
                 focusRequest: gridFocusRequest,
+                startupChannelID: startupMiniChannelID,
                 onLongPress: { channel, program, frame in
                     presentProgramMenu(channel: channel, program: program, frame: frame)
                 },
@@ -565,7 +566,7 @@ struct GuideLayoutView: View {
               let channel = sourceChannels.first(where: { $0.id == channelID }) else { return }
         // Put the guide on the same channel as startup playback, including its
         // playlist group. The focus token scrolls the UIKit grid to its row.
-        focusGuideOnPlayingChannel(channel)
+        focusGuideOnPlayingChannel(channel, focusGridImmediately: false)
         let player = AetherPlayer()
         let keepalive = PlexLiveTimelineKeepalive()
         let resolved: URL
@@ -616,7 +617,7 @@ struct GuideLayoutView: View {
 
     /// Keep the category tab, selected programme, and grid focus in sync with
     /// the channel playing in the corner or returning from full screen.
-    private func focusGuideOnPlayingChannel(_ channel: UnifiedChannel) {
+    private func focusGuideOnPlayingChannel(_ channel: UnifiedChannel, focusGridImmediately: Bool = true) {
         let group = channel.groupTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
         // Hidden groups stay hidden. All Channels remains the safe fallback.
         if let group, !group.isEmpty, groupTitles.contains(group) {
@@ -627,7 +628,8 @@ struct GuideLayoutView: View {
         focusedChannel = channel
         focusedProgram = dataStore.getCurrentProgram(for: channel)
             ?? dataStore.epg[channel.id]?.first { $0.endTime > timelineStart }
-        gridFocusRequest = EPGFocusRequest(channelId: channel.id, token: UUID())
+        gridFocusRequest = focusGridImmediately
+            ? EPGFocusRequest(channelId: channel.id, token: UUID()) : nil
     }
 
     /// A guide entry starts on the last watched channel, if that source is visible.
