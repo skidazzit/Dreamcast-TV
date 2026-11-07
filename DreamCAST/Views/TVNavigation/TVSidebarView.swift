@@ -58,6 +58,10 @@ struct TVSidebarView: View {
     @State private var showWhatsNew = false
     @State private var didApplyDebugLaunch = false
     @State private var didScheduleLiveTVAutoplay = false
+    @State private var startupLoading = true
+    @State private var startupStage = "Preparing your media…"
+    @State private var startupProgress = 0.05
+    @State private var didStartStartupLoading = false
 
     @Namespace private var contentNamespace
 
@@ -207,7 +211,7 @@ struct TVSidebarView: View {
         }
         // Live TV and no media server: open on Live TV, since Home is hidden.
         .onChange(of: opensToLiveTV, initial: true) { _, liveOnly in
-            guard liveOnly, !isLiveTVSelected, selectedTab != .settings else { return }
+            guard !startupLoading, liveOnly, !isLiveTVSelected, selectedTab != .settings else { return }
             selectedTab = .liveTV(sourceId: combineLiveTVSources ? nil : liveTVDataStore.sources.first?.id)
         }
         // Reset tab selection when live TV source mode changes
@@ -275,6 +279,12 @@ struct TVSidebarView: View {
                     .zIndex(10)
                     .allowsHitTesting(false)
             }
+            if setupComplete && startupLoading && !showProfilePicker && !isAwaitingProfileSelection {
+                DreamCASTStartupSplash(stage: startupStage, progress: startupProgress,
+                                       playlistStatus: liveTVDataStore.playlistFetchStatus)
+                    .ignoresSafeArea()
+                    .zIndex(20)
+            }
         }
         .onChange(of: hasAnySource) { _, has in
             if !has { setupComplete = false }
@@ -334,8 +344,10 @@ struct TVSidebarView: View {
             await loadLaunchContent()
         }
         .task {
-            // Start background preloading of Live TV data (low priority)
-            liveTVDataStore.startBackgroundPreload()
+            await prepareStartupMedia()
+        }
+        .onChange(of: setupComplete) { _, ready in
+            if ready { Task { await prepareStartupMedia() } }
         }
         .onChange(of: liveTVDataStore.channels.count, initial: true) { _, _ in
             scheduleLaunchLiveTVAutoplay()
@@ -640,10 +652,47 @@ struct TVSidebarView: View {
 
     // MARK: - Tab Content
 
+    /// A single launch gate for channels, guide data and media libraries.
+    /// Guide navigation uses the results without starting another refresh.
+    private func prepareStartupMedia() async {
+        guard setupComplete, !didStartStartupLoading else { return }
+        didStartStartupLoading = true
+        startupStage = "Loading TV playlists and guide…"
+        startupProgress = 0.12
+
+        if liveTVDataStore.hasConfiguredSources {
+            await liveTVDataStore.prepareForStartupAutoplay()
+        }
+        startupProgress = 0.72
+        startupStage = "Preparing media libraries…"
+
+        // Load the Plex library list, not the full catalog or artwork.
+        if authManager.hasCredentials && !authManager.isContentWithheld {
+            await dataStore.loadLibrariesIfNeeded()
+        }
+
+        // Other media servers load through their own store. Wait briefly for
+        // those lists, but an offline server must not hold the startup screen.
+        if serverStore.isLoading {
+            for _ in 0..<30 {
+                if !serverStore.isLoading || Task.isCancelled { break }
+                try? await Task.sleep(for: .milliseconds(200))
+            }
+        }
+        startupProgress = 1
+        startupStage = "Ready to watch"
+        startupLoading = false
+        scheduleLaunchLiveTVAutoplay()
+        if opensToLiveTV && !isLiveTVSelected && selectedTab != .settings {
+            selectedTab = .liveTV(sourceId: combineLiveTVSources ? nil : liveTVDataStore.sources.first?.id)
+        }
+    }
+
     /// Launch only, never when returning to the guide or bringing the app forward.
     /// Finish the startup playlist and EPG fetch before opening the guide.
     private func scheduleLaunchLiveTVAutoplay() {
         guard !didScheduleLiveTVAutoplay,
+              !startupLoading,
               SettingsStore.bool("liveTVAutoPlayLastWatched", default: false),
               setupComplete, !isAwaitingProfileSelection, !showProfilePicker,
               !showWhatsNew,
@@ -979,6 +1028,51 @@ struct TVSidebarView: View {
 /// The setup landing, standing in for the shell until the user finishes it.
 /// Non-modal update notice: channel navigation stays responsive while the
 /// network fetch runs in the background.
+private struct DreamCASTStartupSplash: View {
+    let stage: String
+    let progress: Double
+    let playlistStatus: LiveTVDataStore.PlaylistFetchStatus?
+
+    private var displayedProgress: Double {
+        guard progress < 0.72, let playlistStatus else { return progress }
+        return 0.12 + 0.58 * Double(playlistStatus.percent) / 100
+    }
+
+    var body: some View {
+        ZStack {
+            Color(red: 0.025, green: 0.035, blue: 0.065)
+            VStack(spacing: 32) {
+                Image(systemName: "play.rectangle.fill")
+                    .font(.system(size: 88, weight: .light))
+                    .foregroundStyle(.cyan)
+                Text("DreamCAST")
+                    .font(.system(size: 64, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                Text("Getting everything ready to watch")
+                    .font(.system(size: 28))
+                    .foregroundStyle(.white.opacity(0.7))
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(progress < 0.72 ? (playlistStatus?.message ?? stage) : stage)
+                        .font(.system(size: 24, weight: .medium))
+                        .foregroundStyle(.white)
+                    ProgressView(value: displayedProgress, total: 1)
+                        .tint(.cyan)
+                    HStack {
+                        Text("TV playlists  •  Programme guide  •  Media libraries")
+                        Spacer()
+                        Text("\(Int(displayedProgress * 100))%")
+                            .monospacedDigit()
+                    }
+                    .font(.system(size: 18))
+                    .foregroundStyle(.white.opacity(0.55))
+                }
+                .frame(width: 790)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
 private struct PlaylistFetchNotice: View {
     let status: LiveTVDataStore.PlaylistFetchStatus
 
