@@ -13,6 +13,50 @@
 import SwiftUI
 import UIKit
 
+/// Guide-only labels. The original channel name and ID stay intact for tuning,
+/// EPG matching, favorites and playlist updates.
+enum LiveTVChannelNames {
+    static let prefixKey = "liveTVGuideNamePrefixes"
+    static let suffixKey = "liveTVGuideNameSuffixes"
+    private static let overridesKey = "liveTVGuideCustomNames"
+
+    static func customName(for id: String) -> String? { overrides()[id] }
+
+    static func setCustomName(_ name: String, for id: String) {
+        var names = overrides()
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { names.removeValue(forKey: id) } else { names[id] = trimmed }
+        if let data = try? JSONEncoder().encode(names) { UserDefaults.standard.set(data, forKey: overridesKey) }
+    }
+
+    static func displayName(for channel: UnifiedChannel) -> String {
+        if let custom = customName(for: channel.id) { return custom }
+        var name = channel.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let defaults = UserDefaults.standard
+        let prefixes = rules(defaults.string(forKey: prefixKey))
+        let suffixes = rules(defaults.string(forKey: suffixKey))
+        for _ in 0..<4 {
+            guard let prefix = prefixes.first(where: { name.range(of: $0, options: [.anchored, .caseInsensitive]) != nil }) else { break }
+            name = String(name.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        for _ in 0..<4 {
+            guard let suffix = suffixes.first(where: { name.range(of: $0, options: [.anchored, .backwards, .caseInsensitive]) != nil }) else { break }
+            name = String(name.dropLast(suffix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return name.isEmpty ? channel.name : name
+    }
+
+    private static func rules(_ value: String?) -> [String] {
+        (value ?? "").split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }.sorted { $0.count > $1.count }
+    }
+
+    private static func overrides() -> [String: String] {
+        guard let data = UserDefaults.standard.data(forKey: overridesKey) else { return [:] }
+        return (try? JSONDecoder().decode([String: String].self, from: data)) ?? [:]
+    }
+}
+
 // MARK: - Theme
 
 /// Guide presets. The dense, dark TV-guide preset is the default; the
@@ -22,6 +66,12 @@ enum EPGTheme {
     static var showLogos: Bool { SettingsStore.bool("liveTVGuideShowLogos", default: true) }
     static var showClock: Bool { SettingsStore.bool("liveTVGuideShowClock", default: true) }
     static var rowSize: Int { SettingsStore.int("liveTVGuideRowSize", default: 1) }
+    static var fontSize: Int { min(max(SettingsStore.int("liveTVGuideFontSize", default: 1), 0), 2) }
+    static var fontScale: CGFloat { [0.85, 1.0, 1.15][fontSize] }
+    static var unfocusedOpacity: CGFloat {
+        [0.65, 0.82, 1.0][min(max(SettingsStore.int("liveTVGuideOpacity", default: 2), 0), 2)]
+    }
+    static var shadeElapsed: Bool { SettingsStore.bool("liveTVGuideShadeElapsed", default: true) }
     static var timeScale: Int { SettingsStore.int("liveTVGuideTimeScale", default: 120) }
     // MARK: Colors
     static var background: Color { tivimate ? Color(red: 0.055, green: 0.065, blue: 0.085) : Color(red: 0.10, green: 0.10, blue: 0.115) }
@@ -74,7 +124,7 @@ enum EPGTheme {
     /// Vertical gap between rows / horizontal gap between cells.
     static var cellSpacing: CGFloat { tivimate ? 2 : 4 }
     /// Longest the timeline grows, starting at the current half hour.
-    static let timelineSpanHours = LiveTVDataStore.epgMaxHoursAhead
+    static var timelineSpanHours: Int { LiveTVDataStore.epgMaxHoursAhead }
     /// EPG hours fetched up front when the guide first opens. Small so the grid
     /// paints fast; the store fills in the rest in the background.
     static let initialGuideHours: Int = 6
@@ -1486,11 +1536,11 @@ final class ProgramCellView: UICollectionViewCell, KeepsUpAtTop {
         elapsedLayer.isHidden = true
         card.layer.insertSublayer(elapsedLayer, at: 0)
 
-        titleLabel.font = .systemFont(ofSize: 23, weight: .semibold)
+        titleLabel.font = .systemFont(ofSize: 23 * EPGTheme.fontScale, weight: .semibold)
         titleLabel.textColor = UIColor(EPGTheme.textPrimary)
         titleLabel.numberOfLines = 1
         titleLabel.lineBreakMode = .byTruncatingTail
-        subtitleLabel.font = .systemFont(ofSize: 19, weight: .regular)
+        subtitleLabel.font = .systemFont(ofSize: 19 * EPGTheme.fontScale, weight: .regular)
         subtitleLabel.textColor = UIColor(EPGTheme.textSecondary)
         subtitleLabel.numberOfLines = 1
         subtitleLabel.lineBreakMode = .byTruncatingTail
@@ -1544,7 +1594,7 @@ final class ProgramCellView: UICollectionViewCell, KeepsUpAtTop {
         CATransaction.setDisableActions(true)
         let w = min(pastWidth, bounds.width)
         elapsedLayer.frame = CGRect(x: 0, y: 0, width: max(w, 0), height: bounds.height)
-        elapsedLayer.isHidden = w <= 0.5
+        elapsedLayer.isHidden = !EPGTheme.shadeElapsed || w <= 0.5
         CATransaction.commit()
     }
 
@@ -1652,7 +1702,7 @@ final class ProgramCellView: UICollectionViewCell, KeepsUpAtTop {
         // backdrop under ~50 scrolling cells every frame.
         card.backgroundColor = focused
             ? (EPGTheme.tivimate ? UIColor(red: 0.15, green: 0.48, blue: 0.83, alpha: 1) : UIColor(white: 0.96, alpha: 1))
-            : (EPGTheme.tivimate ? UIColor(red: 0.15, green: 0.18, blue: 0.23, alpha: 1) : UIColor(white: 1, alpha: 0.08))
+            : (EPGTheme.tivimate ? UIColor(red: 0.15, green: 0.18, blue: 0.23, alpha: EPGTheme.unfocusedOpacity) : UIColor(white: 1, alpha: 0.08))
         card.layer.borderWidth = focused ? 0 : 1
         card.layer.borderColor = UIColor(white: 1, alpha: 0.1).cgColor
         titleLabel.textColor = focused && !EPGTheme.tivimate ? UIColor(white: 0.08, alpha: 1) : .white
@@ -1720,7 +1770,7 @@ final class ChannelColumnView: UICollectionReusableView {
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
         box.addSubview(nameLabel)
 
-        sideNameLabel.font = .systemFont(ofSize: 19, weight: .semibold)
+        sideNameLabel.font = .systemFont(ofSize: 19 * EPGTheme.fontScale, weight: .semibold)
         sideNameLabel.textColor = .white
         sideNameLabel.numberOfLines = 1
         sideNameLabel.lineBreakMode = .byClipping
@@ -1763,7 +1813,7 @@ final class ChannelColumnView: UICollectionReusableView {
 
     func configure(_ channel: UnifiedChannel, transparent: Bool = false) {
         occluder.backgroundColor = transparent ? .clear : UIColor(EPGTheme.background)
-        box.backgroundColor = transparent ? UIColor(white: 0, alpha: 0.28) : UIColor(EPGTheme.columnFill)
+        box.backgroundColor = transparent ? UIColor(white: 0, alpha: 0.28) : UIColor(EPGTheme.columnFill).withAlphaComponent(EPGTheme.unfocusedOpacity)
 
         // Number under the logo when the source has one; the logo takes the
         // whole box when it does not.
@@ -1771,9 +1821,9 @@ final class ChannelColumnView: UICollectionReusableView {
         numberLabel.text = number
         numberLabel.isHidden = number == nil
         logoHeight.constant = number == nil ? 70 : 52
-        nameLabel.text = channel.name
+        nameLabel.text = LiveTVChannelNames.displayName(for: channel)
         logoCenterX.constant = EPGTheme.tivimate ? -55 : 0
-        sideNameLabel.text = channel.name
+        sideNameLabel.text = LiveTVChannelNames.displayName(for: channel)
         nameViewport.isHidden = !EPGTheme.tivimate
         marqueeEnabled = false
         sideNameLabel.layer.removeAnimation(forKey: "channelMarquee")
