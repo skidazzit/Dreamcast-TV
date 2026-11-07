@@ -3,7 +3,7 @@
 
 import Foundation
 
-enum PersonItemMapper {
+nonisolated enum PersonItemMapper {
     /// Metadata-only MediaItem for a filmography title not present on the server.
     /// Keyed by tmdb id so it routes through the existing Discover/metadata-only
     /// presentation (`isMetadataOnly == true`, `tmdbID` decodes).
