@@ -64,6 +64,7 @@ enum LiveTVChannelNames {
 enum EPGTheme {
     static var tivimate: Bool { SettingsStore.bool("liveTVTiviMateGuide", default: true) }
     static var showLogos: Bool { SettingsStore.bool("liveTVGuideShowLogos", default: true) }
+    static var showChannelNumbers: Bool { SettingsStore.bool("liveTVGuideShowChannelNumbers", default: true) }
     static var showClock: Bool { SettingsStore.bool("liveTVGuideShowClock", default: true) }
     static var rowSize: Int { SettingsStore.int("liveTVGuideRowSize", default: 1) }
     /// The logo and name form one sticky column. Keep its width independent
@@ -1833,8 +1834,8 @@ final class ChannelColumnView: UICollectionReusableView {
         // whole box when it does not.
         let number = channel.channelNumber.map(String.init)
         numberLabel.text = number
-        numberLabel.isHidden = number == nil
-        logoHeight.constant = min(number == nil ? 70 : 52, EPGTheme.rowHeight - 18)
+        numberLabel.isHidden = number == nil || !EPGTheme.showChannelNumbers
+        logoHeight.constant = min(numberLabel.isHidden ? 70 : 52, EPGTheme.rowHeight - 18)
         nameLabel.text = LiveTVChannelNames.displayName(for: channel)
         // Anchor the logo at the left even as the full column grows wider.
         logoCenterX.constant = EPGTheme.tivimate ? 55 - EPGTheme.channelColumnWidth / 2 : 0
@@ -2175,8 +2176,9 @@ struct GuideInfoBar: View {
     }
 
     private func channelLine(_ channel: UnifiedChannel) -> String {
-        if let number = channel.channelNumber { return "\(number) · \(channel.name)" }
-        return channel.name
+        let name = LiveTVChannelNames.displayName(for: channel)
+        if EPGTheme.showChannelNumbers, let number = channel.channelNumber { return "\(number) · \(name)" }
+        return name
     }
 
     private func timeRange(_ program: UnifiedProgram) -> String {
