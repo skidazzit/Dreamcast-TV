@@ -57,7 +57,7 @@ struct GuideLayoutView: View {
     }
 
     /// Category tabs: Favorites, then each source by name (#377),
-    /// then group titles, both alphabetical. Groups come from an M3U's
+    /// then group titles in their playlist order. Groups come from an M3U's
     /// `group-title` and, for Plex, the DVR's tuner name. A source wins a name
     /// it shares with a group.
     private var groupTitles: [String] {
@@ -75,7 +75,8 @@ struct GuideLayoutView: View {
         let sources = sourceNames.filter { seen.insert($0).inserted }
         let named = Set(groups.filter { !$0.isEmpty })
         let pinned = pinnedGroups.filter { hasFavorites || named.contains($0) }
-        let rest = LiveTVGroupOrder.ordered(Array(named.subtracting(sources).subtracting(pinned)), saved: savedOrder)
+        let rest = LiveTVGroupOrder.ordered(
+            groups.filter { !sources.contains($0) && !pinned.contains($0) }, saved: savedOrder)
         return pinned + sources.filter { !pinned.contains($0) } + rest
     }
 
@@ -88,8 +89,7 @@ struct GuideLayoutView: View {
         guard let group = selectedGroup, groupTitles.contains(group) else { return sourceChannels }
 
         // Favourites is a view over the flags, not a group match, and it keeps
-        // the user's arrangement instead of the merged channel-number sort
-        // every other tab inherits.
+        // the user's arrangement instead of the playlist order other tabs inherit.
         if group == Self.favouritesTab {
             return dataStore.favorites(in: sourceChannels)
         }
