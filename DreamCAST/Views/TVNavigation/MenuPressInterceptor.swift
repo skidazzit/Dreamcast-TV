@@ -180,13 +180,11 @@ enum MenuPressInterceptor {
                 let began = menuPresses.contains { $0.phase == .began }
                 let finished = menuPresses.contains { $0.phase == .ended || $0.phase == .cancelled }
                 let press = menuPresses.first
-                let wasPending = swallowState.isSwallowing
-                var asked = false
                 let withhold = swallowState.shouldWithhold(
                     press: press,
                     began: began,
                     finished: finished,
-                    handle: { asked = true; return offerToHandlers() }
+                    handle: { offerToHandlers() }
                 )
                 return withhold
             }
