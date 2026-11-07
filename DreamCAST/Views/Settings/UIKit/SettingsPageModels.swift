@@ -738,6 +738,21 @@ enum SettingsContent {
             SettingsRowItem(id: "liveTVSources", title: "Live TV Sources", kind: .navigation(.iptv)),
             SettingsRowItem(id: "liveTVFavorites", title: "Favorites", kind: .navigation(.liveTVFavorites)),
             SettingsRowItem(id: "liveTVGroups", title: "Reorder Playlist Groups", kind: .navigation(.liveTVGroups)),
+            .header("Playlist Updates"),
+            toggle("autoFetchPlaylists", "Auto Fetch on Startup",
+                   key: LiveTVDataStore.autoFetchOnStartupKey, default: true),
+            SettingsRowItem(id: "fetchPlaylistsNow", title: "Fetch Playlists Now",
+                            kind: .action(destructive: false, handler: { vc in
+                Task { @MainActor in
+                    await LiveTVDataStore.shared.fetchPlaylistsNow()
+                    (vc as? SettingsPageViewController)?.reloadRows()
+                }
+            })),
+            SettingsRowItem(id: "playlistFetchStatus", title: "Fetch Status",
+                            kind: .info(value: {
+                guard let status = LiveTVDataStore.shared.playlistFetchStatus else { return "Ready" }
+                return "\(status.percent)% · \(status.message)"
+            })),
         ] + liveTVLookRows + [
             toggle("combineSources", "Combine Sources", key: "combineLiveTVSources", default: true),
             toggle("keepPlayingInGuide", "Keep Playing in Guide", key: "liveTVKeepPlayingInGuide", default: true),
@@ -1513,8 +1528,7 @@ enum SettingsContent {
             refreshingSourceID = source.id
             (vc as? SettingsPageViewController)?.reloadRows()
             Task {
-                await LiveTVDataStore.shared.refreshChannels()
-                await LiveTVDataStore.shared.loadEPG()
+                await LiveTVDataStore.shared.fetchPlaylistsNow()
                 refreshingSourceID = nil
                 (vc as? SettingsPageViewController)?.reloadRows()
             }

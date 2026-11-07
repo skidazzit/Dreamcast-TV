@@ -85,6 +85,20 @@ class LiveTVDataStore: ObservableObject {
     @Published var isLoadingChannels = false
     @Published var isLoadingEPG = false
 
+    /// A visible, stage-based progress report for playlist/guide refreshes.
+    /// Network providers do not expose byte progress, so the percentage tracks
+    /// completed sources and work stages rather than estimated download bytes.
+    struct PlaylistFetchStatus: Equatable {
+        let percent: Int
+        let message: String
+        let finished: Bool
+        let failed: Bool
+    }
+    @Published private(set) var playlistFetchStatus: PlaylistFetchStatus?
+    private var playlistFetchTask: Task<Void, Never>?
+    private var playlistFetchID = UUID()
+    static let autoFetchOnStartupKey = "liveTVAutoFetchOnStartup"
+
     /// Error states
     @Published var channelsError: String?
     /// Per-source EPG failures. Populated after a `loadEPG` run that had at
@@ -282,6 +296,47 @@ class LiveTVDataStore: ObservableObject {
         staleRefreshTask = task
         await task.value
         staleRefreshTask = nil
+    }
+
+    /// Fetch playlists on demand, or at launch without forcing a second
+    /// network request if the first channel load is already running.
+    func fetchPlaylistsNow(force: Bool = true) async {
+        if let playlistFetchTask {
+            await playlistFetchTask.value
+            return
+        }
+        guard hasConfiguredSources else { return }
+        let fetchID = UUID()
+        playlistFetchID = fetchID
+        playlistFetchStatus = PlaylistFetchStatus(percent: 5, message: "Connecting to playlists…", finished: false, failed: false)
+        let task = Task { @MainActor in
+            if force { await refreshChannels() } else { await loadChannels() }
+            let hasChannels = !channels.isEmpty
+            if hasChannels {
+                updatePlaylistFetchProgress(75, message: "Updating TV guide…")
+                await loadEPG(startDate: Date(), hours: Self.refreshWindowHours)
+            }
+            let failed = !hasChannels || (channelsError != nil && channels.isEmpty)
+            let hasWarnings = channelsError != nil || !epgIssues.isEmpty
+            playlistFetchStatus = PlaylistFetchStatus(
+                percent: 100,
+                message: failed ? "Playlist update failed" : hasWarnings ? "Updated with source warnings" : "Playlists and guide updated",
+                finished: true,
+                failed: failed)
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(failed ? 8 : 4))
+                if playlistFetchID == fetchID { playlistFetchStatus = nil }
+            }
+        }
+        playlistFetchTask = task
+        await task.value
+        playlistFetchTask = nil
+    }
+
+    private func updatePlaylistFetchProgress(_ percent: Int, message: String) {
+        guard let status = playlistFetchStatus, !status.finished else { return }
+        playlistFetchStatus = PlaylistFetchStatus(
+            percent: max(status.percent, min(percent, 99)), message: message, finished: false, failed: false)
     }
 
     /// Re-checks the guide every 10 minutes while the app is open, so a guide
@@ -912,7 +967,8 @@ class LiveTVDataStore: ObservableObject {
     /// main actor: a 100k-channel M3U without `tvg-chno` sorts by Unicode collation.
     private nonisolated static func fetchAndMergeChannels(
         from providerEntries: [(key: String, value: any LiveTVProvider)],
-        refreshing: Bool
+        refreshing: Bool,
+        onProgress: (@Sendable (Int, Int) -> Void)? = nil
     ) async -> (channels: [UnifiedChannel], errors: [String]) {
         var allChannels: [UnifiedChannel] = []
         var errors: [String] = []
@@ -931,6 +987,7 @@ class LiveTVDataStore: ObservableObject {
                 }
             }
 
+            var completed = 0
             for await (sourceId, result) in group {
                 switch result {
                 case .success(let channels):
@@ -939,6 +996,8 @@ class LiveTVDataStore: ObservableObject {
                     errors.append("\(sourceId): \(error.localizedDescription)")
                     DiagLog.error(.liveTV, "Channels failed for source \(sourceId.prefix(12)): \(DiagLog.describe(error))")
                 }
+                completed += 1
+                onProgress?(completed, providerEntries.count)
             }
         }
 
@@ -988,7 +1047,13 @@ class LiveTVDataStore: ObservableObject {
         // does not change isolation, so `Task(priority:)` is not a substitute.
         // The MainActor.run below is the only main hop.
         let task = Task.detached { [providerEntries] in
-            let merged = await Self.fetchAndMergeChannels(from: providerEntries, refreshing: false)
+            let merged = await Self.fetchAndMergeChannels(from: providerEntries, refreshing: false, onProgress: { [weak self] done, total in
+                Task { @MainActor [weak self] in
+                    self?.updatePlaylistFetchProgress(
+                        5 + (done * 65 / max(total, 1)),
+                        message: "Fetching playlists (\(done)/\(total) sources)…")
+                }
+            })
 
             // A cancelled (superseded) task must NOT publish: its partial
             // results would clobber whatever the newer loadChannels wrote, and
@@ -1027,11 +1092,18 @@ class LiveTVDataStore: ObservableObject {
         // from a Settings action, so the freeze would be squarely on a tap.
         let providerEntries = Array(providers)
         let merged = await Task.detached { [providerEntries] in
-            await Self.fetchAndMergeChannels(from: providerEntries, refreshing: true)
+            await Self.fetchAndMergeChannels(from: providerEntries, refreshing: true, onProgress: { [weak self] done, total in
+                Task { @MainActor [weak self] in
+                    self?.updatePlaylistFetchProgress(
+                        5 + (done * 65 / max(total, 1)),
+                        message: "Fetching playlists (\(done)/\(total) sources)…")
+                }
+            })
         }.value
 
         channels = merged.channels
         isLoadingChannels = false
+        if !merged.channels.isEmpty { lastChannelsLoad = Date() }
         if !merged.errors.isEmpty {
             channelsError = merged.errors.joined(separator: "\n")
         }
@@ -1117,6 +1189,7 @@ class LiveTVDataStore: ObservableObject {
                     }
                 }
 
+                var completedSources = 0
                 for await (sourceId, result) in group {
                     switch result {
                     case .success(let epg):
@@ -1139,6 +1212,9 @@ class LiveTVDataStore: ObservableObject {
                             reason: Self.shortEPGFailureReason(for: error)
                         ))
                     }
+                    completedSources += 1
+                    let progress = 75 + completedSources * 20 / max(channelsBySource.count, 1)
+                    await self.updatePlaylistFetchProgress(progress, message: "Updating guide (\(completedSources)/\(channelsBySource.count) sources)…")
                 }
             }
 
@@ -1328,17 +1404,10 @@ class LiveTVDataStore: ObservableObject {
                 return
             }
 
-            // Load channels first (if not already loaded)
-            if channels.isEmpty && !isLoadingChannels {
-                await loadChannels()
-            }
+            // A separate switch lets viewers disable launch-time network fetches.
+            guard userDefaults.object(forKey: Self.autoFetchOnStartupKey) as? Bool ?? true else { return }
 
-            guard !Task.isCancelled else { return }
-
-            // Then load EPG (if not already loaded)
-            if epg.isEmpty && !isLoadingEPG && !channels.isEmpty {
-                await loadEPG(startDate: Date(), hours: 6)
-            }
+            await fetchPlaylistsNow(force: false)
         }
     }
 

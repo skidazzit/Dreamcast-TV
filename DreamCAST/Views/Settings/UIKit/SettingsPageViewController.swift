@@ -39,6 +39,7 @@ final class SettingsPageViewController: UIViewController, SidebarTabReselecting 
     private var reorder: GrabReorderController!
     private var speechModelState: AnyCancellable?
     private var homeRowsUpdates: AnyCancellable?
+    private var playlistFetchUpdates: AnyCancellable?
 
     init(page: SettingsPage) {
         self.page = page
@@ -116,6 +117,13 @@ final class SettingsPageViewController: UIViewController, SidebarTabReselecting 
             speechModelState = SpeechModelStore.shared.$state
                 .dropFirst()
                 .throttle(for: .milliseconds(250), scheduler: DispatchQueue.main, latest: true)
+                .sink { [weak self] _ in self?.refreshVisibleValues() }
+        }
+
+        if page == .liveTV || page == .liveTVSourceDetail {
+            playlistFetchUpdates = LiveTVDataStore.shared.$playlistFetchStatus
+                .dropFirst()
+                .receive(on: DispatchQueue.main)
                 .sink { [weak self] _ in self?.refreshVisibleValues() }
         }
 

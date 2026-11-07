@@ -265,6 +265,14 @@ struct TVSidebarView: View {
                     // Store the key, so connecting a source here can't flip the unset default.
                     .onAppear { setupComplete = false }
             }
+            if let status = liveTVDataStore.playlistFetchStatus {
+                PlaylistFetchNotice(status: status)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                    .padding(.top, 68)
+                    .padding(.trailing, 72)
+                    .zIndex(10)
+                    .allowsHitTesting(false)
+            }
         }
         .onChange(of: hasAnySource) { _, has in
             if !has { setupComplete = false }
@@ -929,6 +937,36 @@ struct TVSidebarView: View {
             }
             lastSeenBuild = current
         }
+    }
+}
+
+/// The setup landing, standing in for the shell until the user finishes it.
+/// Non-modal update notice: channel navigation stays responsive while the
+/// network fetch runs in the background.
+private struct PlaylistFetchNotice: View {
+    let status: LiveTVDataStore.PlaylistFetchStatus
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Image(systemName: status.failed ? "exclamationmark.triangle.fill" : status.finished ? "checkmark.circle.fill" : "arrow.triangle.2.circlepath")
+                    .foregroundStyle(status.failed ? .orange : .cyan)
+                Text(status.message)
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            HStack(spacing: 14) {
+                ProgressView(value: Double(status.percent), total: 100)
+                    .tint(status.failed ? .orange : .cyan)
+                Text("\(status.percent)%")
+                    .monospacedDigit()
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(.white)
+            }
+        }
+        .padding(20)
+        .frame(width: 540)
+        .background(RoundedRectangle(cornerRadius: 16).fill(Color(red: 0.08, green: 0.11, blue: 0.16).opacity(0.96)))
     }
 }
 
