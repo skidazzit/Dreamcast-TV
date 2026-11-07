@@ -434,6 +434,7 @@ enum SettingsContent {
     }
 
     private static var iCloudSyncValue: String {
+        if !CloudSync.isAvailableInThisBuild { return "Unavailable in This Build" }
         if CloudSync.shared.status == .on, CloudSync.shared.blockedAccountIDs.contains(PlexAuthManager.syncID) {
             return String(localized: "iCloud has a different Plex account")
         }
