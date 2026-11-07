@@ -1898,18 +1898,18 @@ final class ProgramCellView: UICollectionViewCell, KeepsUpAtTop {
     }
 
     private func applyFocus(_ focused: Bool) {
-        // Unfocused: the app's glass row tint (faint white fill, hairline
-        // edge), not a live UIGlassEffect per cell, which would re-sample the
-        // backdrop under ~50 scrolling cells every frame.
-        card.backgroundColor = focused
-            ? (EPGTheme.tivimate ? UIColor(red: 0.15, green: 0.48, blue: 0.83, alpha: 1) : UIColor(white: 0.96, alpha: 1))
-            : (EPGTheme.tivimate ? UIColor(red: 0.15, green: 0.18, blue: 0.23, alpha: EPGTheme.unfocusedOpacity) : UIColor(white: 1, alpha: 0.08))
-        card.layer.borderWidth = focused ? 0 : 1
+        // Focus stays on a programme cell for tvOS navigation, but only the
+        // channel logo/name column shows the selection. Keep every programme
+        // tile visually neutral as the user moves up or down the channel list.
+        card.backgroundColor = EPGTheme.tivimate
+            ? UIColor(red: 0.15, green: 0.18, blue: 0.23, alpha: EPGTheme.unfocusedOpacity)
+            : UIColor(white: 1, alpha: 0.08)
+        card.layer.borderWidth = 1
         card.layer.borderColor = UIColor(white: 1, alpha: 0.1).cgColor
-        titleLabel.textColor = focused && !EPGTheme.tivimate ? UIColor(white: 0.08, alpha: 1) : .white
-        subtitleLabel.textColor = focused && !EPGTheme.tivimate ? UIColor(white: 0.08, alpha: 0.6) : UIColor(white: 1, alpha: 0.7)
-        tagLabel.textColor = focused && !EPGTheme.tivimate ? UIColor(white: 0.08, alpha: 0.8) : .white
-        tagLabel.backgroundColor = focused ? UIColor(white: 0, alpha: 0.1) : UIColor(white: 1, alpha: 0.2)
+        titleLabel.textColor = .white
+        subtitleLabel.textColor = UIColor(white: 1, alpha: 0.7)
+        tagLabel.textColor = .white
+        tagLabel.backgroundColor = UIColor(white: 1, alpha: 0.2)
     }
 }
 
@@ -1928,6 +1928,8 @@ final class ChannelColumnView: UICollectionReusableView {
     private let nameViewport = UIView()
     private var marqueeSignature: String?
     private var marqueeEnabled = false
+    private var isChannelSelected = false
+    private var isTransparent = false
     private var logoLoadTask: Task<Void, Never>?
     private var currentLogoURL: URL?
     private var logoHeight: NSLayoutConstraint!
@@ -2013,8 +2015,9 @@ final class ChannelColumnView: UICollectionReusableView {
     required init?(coder: NSCoder) { fatalError() }
 
     func configure(_ channel: UnifiedChannel, transparent: Bool = false) {
+        isTransparent = transparent
         occluder.backgroundColor = transparent ? .clear : UIColor(EPGTheme.background)
-        box.backgroundColor = transparent ? UIColor(white: 0, alpha: 0.28) : UIColor(EPGTheme.columnFill).withAlphaComponent(EPGTheme.unfocusedOpacity)
+        applySelectionAppearance()
 
         // Number under the logo when the source has one; the logo takes the
         // whole box when it does not.
@@ -2074,6 +2077,8 @@ final class ChannelColumnView: UICollectionReusableView {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        isChannelSelected = false
+        applySelectionAppearance()
         marqueeEnabled = false
         sideNameLabel.layer.removeAnimation(forKey: "channelMarquee")
         marqueeSignature = nil
@@ -2097,11 +2102,29 @@ final class ChannelColumnView: UICollectionReusableView {
     }
 
     func setHighlighted(_ highlighted: Bool) {
+        isChannelSelected = highlighted
+        applySelectionAppearance()
         guard marqueeEnabled != highlighted else { return }
         marqueeEnabled = highlighted
         sideNameLabel.layer.removeAnimation(forKey: "channelMarquee")
         marqueeSignature = nil
         setNeedsLayout()
+    }
+
+    private func applySelectionAppearance() {
+        let selectedColor = EPGTheme.tivimate
+            ? UIColor(red: 0.15, green: 0.48, blue: 0.83, alpha: 1)
+            : UIColor(white: 0.96, alpha: 1)
+        box.backgroundColor = isChannelSelected
+            ? selectedColor
+            : (isTransparent ? UIColor(white: 0, alpha: 0.28)
+               : UIColor(EPGTheme.columnFill).withAlphaComponent(EPGTheme.unfocusedOpacity))
+        box.layer.borderWidth = isChannelSelected ? 2 : 0
+        box.layer.borderColor = UIColor.white.withAlphaComponent(0.75).cgColor
+        let labelColor: UIColor = isChannelSelected && !EPGTheme.tivimate ? UIColor(white: 0.06, alpha: 1) : .white
+        sideNameLabel.textColor = labelColor
+        nameLabel.textColor = labelColor
+        numberLabel.textColor = labelColor.withAlphaComponent(0.75)
     }
 
     /// Scroll long channel titles gently inside the name column. Using a
