@@ -37,4 +37,24 @@ final class GuideCategoryTabsTests: XCTestCase {
                                      saved: ["Sports", "Removed", "Sports", "News"]),
             ["Sports", "News", "Kids"])
     }
+
+    func test_playlistGroupOrderIsKeptWithoutCustomSort() {
+        let groups = ["Sports", "Movies", "Kids", "Sports", "News"]
+        XCTAssertEqual(LiveTVGroupOrder.ordered(groups, saved: []),
+                       ["Sports", "Movies", "Kids", "News"])
+        XCTAssertEqual(GuideLayoutView.tabTitles(groups: groups, sourceNames: [], hasFavorites: false),
+                       ["Sports", "Movies", "Kids", "News"])
+    }
+
+    func test_sourceChannelOrderSurvivesOutOfOrderFetchCompletion() {
+        let first = [
+            UnifiedChannel(id: "sports", sourceType: .genericM3U, sourceId: "a", channelNumber: 300, name: "Sports"),
+            UnifiedChannel(id: "news", sourceType: .genericM3U, sourceId: "a", channelNumber: 10, name: "News")
+        ]
+        let second = [
+            UnifiedChannel(id: "movies", sourceType: .genericM3U, sourceId: "b", name: "Movies")
+        ]
+        let channels = LiveTVDataStore.channelsInSourceOrder(["b": second, "a": first], sourceIDs: ["a", "b"])
+        XCTAssertEqual(channels.map(\.id), ["sports", "news", "movies"])
+    }
 }
