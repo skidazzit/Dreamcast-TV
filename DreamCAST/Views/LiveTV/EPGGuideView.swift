@@ -324,6 +324,7 @@ struct EPGGuide: UIViewRepresentable {
         /// Only the row holding tvOS focus may animate its channel name.
         private var highlightedSection: Int?
         private var pendingFocus: IndexPath?
+        private var pendingVerticalTarget: IndexPath?
         var didRestScroll = false
         /// The committed horizontal offset. The timeline only moves sideways on a
         /// deliberate left/right move (or drag); during channel changes and when
@@ -472,6 +473,7 @@ struct EPGGuide: UIViewRepresentable {
             guard let ip = context.nextFocusedIndexPath,
                   let channel = sections[safe: ip.section],
                   let program = programs[safe: ip.section]?[safe: ip.item] else { return }
+            if pendingVerticalTarget == ip { pendingVerticalTarget = nil }
             let now = parent.now
             currentSection = ip.section
             currentFocusedIsLive = program.isLive(at: now)
@@ -527,7 +529,22 @@ struct EPGGuide: UIViewRepresentable {
         func collectionView(_ collectionView: UICollectionView,
                             shouldUpdateFocusIn context: UICollectionViewFocusUpdateContext) -> Bool {
             if context.focusHeading == .up || context.focusHeading == .down {
-                return shouldAllowVerticalMove(context, in: collectionView)
+                if context.nextFocusedIndexPath == pendingVerticalTarget,
+                   pendingVerticalTarget != nil { return true }
+                guard let focused = context.previouslyFocusedIndexPath else { return true }
+                let down = context.focusHeading == .down
+                guard Self.verticalTargetSection(from: focused.section, engineSection: nil,
+                                                 movingDown: down, sectionCount: programs.count) != nil else {
+                    // Only the real edge may leave the grid (Up to groups).
+                    return !down
+                }
+                // Never accept the engine's geometric choice. Its target can
+                // be hours away or another focus region when rows scroll out.
+                // Move after the current focus pass, not inside its delegate.
+                DispatchQueue.main.async { [weak self] in
+                    _ = self?.stepChannel(down: down, from: focused)
+                }
+                return false
             }
             guard context.focusHeading == .left,
                   let prev = context.previouslyFocusedIndexPath,
@@ -653,36 +670,6 @@ struct EPGGuide: UIViewRepresentable {
 
         // MARK: Focus placement
 
-        /// Veto the engine's geometric choice for Up/Down when it is not the
-        /// programme airing at the anchor time, and move focus there instead.
-        ///
-        /// The redirect lands a runloop later, and the engine keeps offering
-        /// candidates meanwhile. Once every cell is vetoed its last offer is to
-        /// leave the grid, which on the Guide is the sidebar; with a row in that
-        /// direction, that offer is redirected like any other.
-        private func shouldAllowVerticalMove(_ context: UICollectionViewFocusUpdateContext,
-                                             in collectionView: UICollectionView) -> Bool {
-            guard let prev = context.previouslyFocusedIndexPath,
-                  let section = Self.verticalTargetSection(
-                    from: prev.section, engineSection: context.nextFocusedIndexPath?.section,
-                    movingDown: context.focusHeading == .down, sectionCount: programs.count)
-            else { return true }
-            let leavingGrid = context.nextFocusedIndexPath == nil
-            let next = context.nextFocusedIndexPath ?? IndexPath(item: -1, section: section)
-            let anchor = clampedAnchor(in: collectionView)
-            guard let desired = programIndex(inSection: next.section, covering: anchor),
-                  desired != next.item else { return true }
-            let target = IndexPath(item: desired, section: next.section)
-            // Only redirect to a cell that exists right now; otherwise the veto
-            // would eat the swipe. The engine's own pick is in the same row, so
-            // the row is realized, and the anchor is inside the visible window.
-            // Leaving the grid is never the better outcome, so that is vetoed
-            // even when the redirect cannot land.
-            guard collectionView.cellForItem(at: target) != nil else { return !leavingGrid }
-            requestFocus(target)
-            return false
-        }
-
         /// The row an Up/Down move goes to, or nil when it is not one this
         /// guide steers: a move along the row, or leaving the grid at the top
         /// (to the category pills) or bottom edge. `engineSection` nil means the
@@ -735,11 +722,18 @@ struct EPGGuide: UIViewRepresentable {
         /// The tvOS focus engine can otherwise jump to a distant programme or
         /// return to the group bar when its geometric target is not visible.
         @discardableResult
-        func stepChannel(down: Bool) -> Bool {
+        func stepChannel(down: Bool, from requestedIndexPath: IndexPath? = nil) -> Bool {
             guard let cv = collectionView,
-                  let cell = UIFocusSystem.focusSystem(for: cv)?.focusedItem as? UICollectionViewCell,
-                  let focused = cv.indexPath(for: cell),
                   let layout = cv.collectionViewLayout as? EPGLayout else { return false }
+            let focused: IndexPath?
+            if let requestedIndexPath {
+                focused = requestedIndexPath
+            } else if let cell = UIFocusSystem.focusSystem(for: cv)?.focusedItem as? UICollectionViewCell {
+                focused = cv.indexPath(for: cell)
+            } else {
+                focused = nil
+            }
+            guard let focused else { return false }
             let nextSection = focused.section + (down ? 1 : -1)
             guard programs.indices.contains(nextSection) else { return down }
             let time = clampedAnchor(in: cv)
@@ -758,9 +752,24 @@ struct EPGGuide: UIViewRepresentable {
             if bottom > visibleBottom - rowH { y += bottom - (visibleBottom - rowH) }
             let maxY = max(-cv.contentInset.top,
                            layout.collectionViewContentSize.height - cv.bounds.height + cv.contentInset.bottom)
+            let target = IndexPath(item: item, section: nextSection)
+            if let frame = layout.layoutAttributesForItem(at: target)?.frame {
+                let visibleLeft = lockedX + EPGTheme.channelColumnWidth
+                let visibleRight = lockedX + cv.bounds.width
+                if frame.maxX <= visibleLeft || frame.minX >= visibleRight {
+                    // Some EPGs have large gaps. Bring their nearest programme
+                    // into view instead of retrying focus on an unseen cell.
+                    lockedX = min(max(frame.minX - EPGTheme.channelColumnWidth - 12,
+                                      -EPGTheme.channelColumnWidth),
+                                  max(-EPGTheme.channelColumnWidth,
+                                      layout.collectionViewContentSize.width - cv.bounds.width))
+                }
+            }
             cv.setContentOffset(CGPoint(x: lockedX, y: min(max(y, -cv.contentInset.top), maxY)), animated: false)
             cv.layoutIfNeeded()
-            requestFocus(IndexPath(item: item, section: nextSection))
+            print("[GuideFocus] Down=\(down) from=\(focused.section) to=\(nextSection) item=\(item)")
+            pendingVerticalTarget = target
+            requestFocus(target)
             return true
         }
 
