@@ -4,10 +4,10 @@
     {
       "identity" : "aetherengine",
       "kind" : "remoteSourceControl",
-      "location" : "https://github.com/superuser404notfound/AetherEngine",
+      "location" : "https://github.com/skidazzit/AetherEngine",
       "state" : {
-        "revision" : "7d50497f905531f6ebefe937f821fab0ba4ac0df",
-        "version" : "7.57.0"
+        "branch" : "fix/owned-network-buffer",
+        "revision" : "557a6ff31c818a622db7cd1d77dffd3a03cb875f"
       }
     },
     {
