@@ -1609,13 +1609,9 @@ enum SettingsContent {
         case .plex where PlexAuthManager.shared.isAuthenticated:
             loadPlexServers(reload: reload)
         case .liveTVFavorites, .liveTVGroups:
-            // Settings can open before Live TV has loaded its channels.
-            if LiveTVDataStore.shared.channels.isEmpty {
-                Task { @MainActor in
-                    await LiveTVDataStore.shared.loadChannels()
-                    reload()
-                }
-            }
+            // Opening a Settings page never fetches a playlist. If no channels
+            // are loaded yet, the user can run Fetch Playlists Now explicitly.
+            break
         default:
             break
         }
