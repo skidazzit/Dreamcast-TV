@@ -548,6 +548,7 @@ enum SettingsContent {
                                              suggestions: [], keyboardType: .default,
                                              set: { SettingsStore.setString(LiveTVChannelNames.suffixKey, $0) })),
             toggle("guideChannelLogos", "Channel Logos", key: "liveTVGuideShowLogos", default: true),
+            toggle("guideChannelNumbers", "Channel Numbers", key: "liveTVGuideShowChannelNumbers", default: true),
             toggle("guideElapsedShade", "Shade Past Programs", key: "liveTVGuideShadeElapsed", default: true),
             toggle("guideArtwork", "Program Artwork Background", key: "liveTVGuideArtwork", default: false),
             toggle("guideClock", "Guide Clock", key: "liveTVGuideShowClock", default: true)
