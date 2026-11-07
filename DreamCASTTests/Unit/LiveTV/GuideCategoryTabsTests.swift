@@ -9,6 +9,7 @@
 //
 
 import XCTest
+import UIKit
 @testable import DreamCAST
 
 final class GuideCategoryTabsTests: XCTestCase {
@@ -71,6 +72,35 @@ final class GuideCategoryTabsTests: XCTestCase {
         XCTAssertEqual(LiveTVChannelNames.displayName(for: channel), "ESPN")
         LiveTVChannelNames.setCustomName("ESPN One", for: channel.id)
         XCTAssertEqual(LiveTVChannelNames.displayName(for: channel), "ESPN One")
+    }
+
+    @MainActor
+    func test_liveGuideLayoutTracksChannelColumnWidthChanges() {
+        let key = "liveTVGuideChannelColumnWidth"
+        let styleKey = "liveTVTiviMateGuide"
+        let defaults = UserDefaults.standard
+        let previousWidth = defaults.object(forKey: key)
+        let previousStyle = defaults.object(forKey: styleKey)
+        defer {
+            if let previousWidth { defaults.set(previousWidth, forKey: key) }
+            else { defaults.removeObject(forKey: key) }
+            if let previousStyle { defaults.set(previousStyle, forKey: styleKey) }
+            else { defaults.removeObject(forKey: styleKey) }
+        }
+        defaults.set(true, forKey: styleKey)
+        defaults.set(220, forKey: key)
+        let layout = EPGLayout()
+        let collection = UICollectionView(frame: CGRect(x: 0, y: 0, width: 1920, height: 1080),
+                                          collectionViewLayout: layout)
+        layout.configure(rows: [[]], channelCount: 1, totalMinutes: 180,
+                         timelineStart: Date(), now: Date())
+        let index = IndexPath(item: 0, section: 0)
+        XCTAssertEqual(layout.layoutAttributesForSupplementaryView(ofKind: EPGLayout.kindChannel,
+                                                                    at: index)?.frame.width, 220)
+        defaults.set(320, forKey: key)
+        XCTAssertEqual(layout.layoutAttributesForSupplementaryView(ofKind: EPGLayout.kindChannel,
+                                                                    at: index)?.frame.width, 320)
+        _ = collection
     }
 
     func test_sourceChannelOrderSurvivesOutOfOrderFetchCompletion() {
