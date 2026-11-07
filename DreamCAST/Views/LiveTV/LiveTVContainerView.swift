@@ -39,6 +39,7 @@ struct LiveTVContainerView: View {
     var sourceIdFilter: String?
 
     @AppStorage("liveTVLayout") private var liveTVLayoutRaw = LiveTVLayout.fallback.rawValue
+    @AppStorage("liveTVAutoPlayLastWatched") private var autoPlayLastWatched = false
     @StateObject private var launchMini = LiveTVLaunchMiniRequest.shared
 
     private var layout: LiveTVLayout {
@@ -47,7 +48,10 @@ struct LiveTVContainerView: View {
 
     var body: some View {
         Group {
-            switch launchMini.channelID == nil ? layout : .guide {
+            // Keep the same UIKit guide mounted throughout startup. Otherwise
+            // Browse mounts first, then a late playlist callback swaps it for
+            // Guide and resets the tvOS focus chain on the first Down press.
+            switch autoPlayLastWatched || launchMini.channelID != nil ? .guide : layout {
             case .guide:
                 GuideLayoutView(sourceIdFilter: sourceIdFilter, startupMiniChannelID: launchMini.channelID)
             case .browse:
