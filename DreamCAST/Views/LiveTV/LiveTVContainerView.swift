@@ -38,6 +38,7 @@ struct LiveTVContainerView: View {
     var sourceIdFilter: String?
 
     @AppStorage("liveTVLayout") private var liveTVLayoutRaw = LiveTVLayout.fallback.rawValue
+    @StateObject private var launchMini = LiveTVLaunchMiniRequest.shared
 
     private var layout: LiveTVLayout {
         LiveTVLayout(rawValue: liveTVLayoutRaw) ?? .fallback
@@ -45,9 +46,9 @@ struct LiveTVContainerView: View {
 
     var body: some View {
         Group {
-            switch layout {
+            switch launchMini.channelID == nil ? layout : .guide {
             case .guide:
-                GuideLayoutView(sourceIdFilter: sourceIdFilter)
+                GuideLayoutView(sourceIdFilter: sourceIdFilter, startupMiniChannelID: launchMini.channelID)
             case .browse:
                 LiveBrowseBridge(sourceIdFilter: sourceIdFilter)
                     .ignoresSafeArea()
@@ -55,6 +56,14 @@ struct LiveTVContainerView: View {
             }
         }
     }
+}
+
+/// A one-shot request from app launch. It stays set while Live TV is visible,
+/// so a SwiftUI refresh never tears down the playing guide mini-player.
+@MainActor
+final class LiveTVLaunchMiniRequest: ObservableObject {
+    static let shared = LiveTVLaunchMiniRequest()
+    @Published var channelID: String?
 }
 
 /// Hosts the UIKit Browse layout. `.id` on the source rebuilds it when the
