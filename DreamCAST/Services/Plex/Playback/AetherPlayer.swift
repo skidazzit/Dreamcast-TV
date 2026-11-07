@@ -54,6 +54,10 @@ final class AetherPlayer: PlayerProtocol {
     /// outlives its item.
     private var frameExtractor: FrameExtractor?
 
+    /// Debug-only host headroom alongside Aether's 30-second memprobe.
+    /// This samples existing counters and never retains video data.
+    private var lastMemoryTraceAt: TimeInterval = 0
+
     /// Mirrors engine.$isSubtitleActive. True when any subtitle track
     /// (embedded or sidecar) is selected and the engine has cue data.
     @Published private(set) var isSubtitleActive: Bool = false
@@ -192,8 +196,26 @@ final class AetherPlayer: PlayerProtocol {
         observeAppLifecycle()
         Timer.publish(every: 2, on: .main, in: .common)
             .autoconnect()
-            .sink { [weak self] _ in self?.checkLiveBufferHealth() }
+            .sink { [weak self] _ in
+                self?.checkLiveBufferHealth()
+                self?.tracePlaybackMemoryIfNeeded()
+            }
             .store(in: &cancellables)
+    }
+
+    private func tracePlaybackMemoryIfNeeded() {
+#if DEBUG
+        guard engine.currentAVPlayer != nil else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastMemoryTraceAt >= 15 else { return }
+        lastMemoryTraceAt = now
+        let availableMB = os_proc_available_memory() / 1_048_576
+        let telemetry = engine.diagnostics.liveTelemetry
+        let cachedMB = telemetry.map { $0.cachedBytes / 1_048_576 } ?? -1
+        let rssMB = telemetry?.rssMb ?? -1
+        let itemStatus = engine.currentAVPlayer?.currentItem == nil ? "none" : "active"
+        print("[PlexMemoryTrace] availableMB=\(availableMB) rssMB=\(rssMB) cachedMB=\(cachedMB) playerItem=\(itemStatus)")
+#endif
     }
 
     private func checkLiveBufferHealth() {
