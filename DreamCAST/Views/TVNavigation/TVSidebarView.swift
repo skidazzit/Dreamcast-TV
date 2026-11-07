@@ -1042,14 +1042,11 @@ private struct DreamCASTStartupSplash: View {
         ZStack {
             Color(red: 0.025, green: 0.035, blue: 0.065)
             VStack(spacing: 32) {
-                Image("AppIconArt-standard")
+                Image("DreamCASTStartupLogo")
                     .resizable()
                     .scaledToFit()
-                    .frame(width: 420, height: 240)
+                    .frame(width: 560, height: 336)
                     .accessibilityHidden(true)
-                Text("DreamCAST")
-                    .font(.system(size: 64, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
                 Text("Getting everything ready to watch")
                     .font(.system(size: 28))
                     .foregroundStyle(.white.opacity(0.7))
