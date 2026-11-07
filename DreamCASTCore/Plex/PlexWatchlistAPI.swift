@@ -50,7 +50,7 @@ protocol WatchlistCacheProtocol: Sendable {
 final class PlexWatchlistAPI: PlexWatchlistAPIProtocol, Sendable {
     /// Items per watchlist request. Plex accepts up to its own ceiling; 100
     /// keeps a typical watchlist to a single round trip.
-    private static let pageSize = 100
+    nonisolated private static let pageSize = 100
 
     private let session: URLSession
     private let discoverHost = URL(string: "https://discover.provider.plex.tv")!
