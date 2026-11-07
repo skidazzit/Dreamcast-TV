@@ -49,6 +49,7 @@ final class AudioRouteDiagnostics {
                 object: AVAudioSession.sharedInstance(),
                 queue: .main
             ) { [weak self] _ in
+                Task { @MainActor in PlaybackAudioSessionConfigurator.invalidateActivation() }
                 self?.logCurrentRoute(owner: "AudioRouteDiagnostics", reason: "media_services_reset")
             }
         }
@@ -102,6 +103,7 @@ final class AudioRouteDiagnostics {
 
         switch type {
         case .began:
+            Task { @MainActor in PlaybackAudioSessionConfigurator.invalidateActivation() }
             logCurrentRoute(owner: "AudioRouteDiagnostics", reason: "interruption_began")
         case .ended:
             let optionsValue = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
