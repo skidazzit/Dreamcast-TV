@@ -11,7 +11,7 @@
 
 import Foundation
 
-enum WatchProgressPolicy {
+nonisolated enum WatchProgressPolicy {
     /// Below this, a resume point is noise the user does not want to be asked
     /// about (a few seconds of an accidental start).
     static let startedThreshold: Double = 0.02
