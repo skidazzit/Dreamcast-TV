@@ -257,20 +257,19 @@ class LiveTVDataStore: ObservableObject {
 
     // MARK: - Freshness / refresh
 
-    /// True when the guide on screen can't be trusted: fetched more than `maxAge`
-    /// ago, or the loaded EPG window no longer reaches now (after a long sleep the
-    /// grid renders empty with `epg` non-empty). An empty store is always stale.
+    /// Only guide *program data* ages out. Channel playlists refresh at startup
+    /// (if enabled), when a source changes, or on explicit Settings fetch.
     func isStale(maxAge: TimeInterval = defaultMaxAge, now: Date = Date()) -> Bool {
-        if channels.isEmpty || epg.isEmpty { return true }
-        guard let lastEPGLoad, let lastChannelsLoad else { return true }
+        guard !channels.isEmpty else { return false }
+        if epg.isEmpty { return true }
+        guard let lastEPGLoad else { return true }
         if now.timeIntervalSince(lastEPGLoad) > maxAge { return true }
-        if now.timeIntervalSince(lastChannelsLoad) > maxAge { return true }
         if let through = epgLoadedThrough, through <= now { return true }
         return false
     }
 
-    /// Re-fetches channels and EPG when `isStale`; cheap to call on every arrival
-    /// and foreground. Concurrent callers share one refresh, because two
+    /// Refreshes EPG only when stale; opening the guide must not fetch playlists.
+    /// Concurrent callers share one refresh, because two
     /// overlapping EPG fetches cancel each other through `epgLoad`.
     func refreshIfStale(maxAge: TimeInterval = defaultMaxAge) async {
         guard !providers.isEmpty else { return }
@@ -282,14 +281,9 @@ class LiveTVDataStore: ObservableObject {
 
         let task = Task { [weak self] in
             guard let self else { return }
-            // Channels first: the EPG fetch is keyed by the channel list, so
-            // a source whose line-up changed needs the new list in hand.
-            let count = self.channels.count
-            await self.loadChannels()
-            guard !self.channels.isEmpty else { return }
             let now = Date()
             let near = now.addingTimeInterval(Double(Self.refreshWindowHours) * 3600)
-            if self.epg.isEmpty || self.channels.count != count || (self.epgLoadedThrough ?? now) <= near
+            if self.epg.isEmpty || (self.epgLoadedThrough ?? now) <= near
                 || now.timeIntervalSince(self.lastFullEPGLoad ?? .distantPast) > 6 * 3600 {
                 await self.loadEPG(startDate: now, hours: Self.refreshWindowHours)
             } else if await self.mergeEPG(from: now, to: near) {
@@ -1417,24 +1411,10 @@ class LiveTVDataStore: ObservableObject {
         }
     }
 
-    /// Elevate preload priority when user is about to view Live TV.
-    /// If data is already loaded, this does nothing. Otherwise it cancels
-    /// background task and starts high priority load.
+    /// Opening Live TV may load missing guide programmes, but never refetches
+    /// channels. Leave the startup task running if it is still in progress.
     func elevatePreloadPriority() async {
-        // If already loaded, nothing to do
-        guard epg.isEmpty else {
-            return
-        }
-
-        // Cancel background task
-        backgroundPreloadTask?.cancel()
-        backgroundPreloadTask = nil
-
-        // Load with default (high) priority
-        if channels.isEmpty && !isLoadingChannels {
-            await loadChannels()
-        }
-
+        guard !channels.isEmpty else { return }
         if epg.isEmpty && !isLoadingEPG && !channels.isEmpty {
             await loadEPG(startDate: Date(), hours: 6)
         }
