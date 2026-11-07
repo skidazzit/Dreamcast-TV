@@ -510,9 +510,24 @@ enum SettingsContent {
                                              let index = options.firstIndex(of: EPGTheme.timeScale) ?? 1
                                              SettingsStore.setInt("liveTVGuideTimeScale", options[(index + 1) % options.count])
                                          })),
-            SettingsRowItem(id: "guideRowSize", title: "Guide Row Size",
-                            kind: .cycle(value: { ["Compact", "Normal", "Large"][min(max(EPGTheme.rowSize, 0), 2)] },
-                                         next: { SettingsStore.setInt("liveTVGuideRowSize", (EPGTheme.rowSize + 1) % 3) })),
+            SettingsRowItem(id: "guideColumnWidth", title: "Channel Column Width",
+                            kind: .textEntry(value: { String(EPGTheme.channelColumnWidthSetting) },
+                                             placeholder: "220", hint: "Enter a width from 160 to 420 points.",
+                                             suggestions: [], keyboardType: .numberPad,
+                                             set: { value in
+                                                 let width = Int(value) ?? 220
+                                                 SettingsStore.setInt("liveTVGuideChannelColumnWidth", min(max(width, 160), 420))
+                                             }),
+                            isEnabled: { EPGTheme.tivimate }),
+            SettingsRowItem(id: "guideRowSize", title: "Channel Row Height",
+                            kind: .textEntry(value: { String(EPGTheme.channelRowHeightSetting) },
+                                             placeholder: "82", hint: "Enter a row height from 60 to 160 points.",
+                                             suggestions: [], keyboardType: .numberPad,
+                                             set: { value in
+                                                 let height = Int(value) ?? 82
+                                                 SettingsStore.setInt("liveTVGuideChannelRowHeight", min(max(height, 60), 160))
+                                             }),
+                            isEnabled: { EPGTheme.tivimate }),
             SettingsRowItem(id: "guideFontSize", title: "Guide Text Size",
                             kind: .cycle(value: { ["Small", "Normal", "Large"][EPGTheme.fontSize] },
                                          next: { SettingsStore.setInt("liveTVGuideFontSize", (EPGTheme.fontSize + 1) % 3) })),
