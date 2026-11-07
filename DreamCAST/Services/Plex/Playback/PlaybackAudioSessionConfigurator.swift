@@ -53,6 +53,8 @@ enum PlaybackAudioSessionConfigurator {
     private static var lastActivationModeRawValue: String = ""
     @MainActor
     private static var lastActivationUsedLongFormPolicy = false
+    @MainActor
+    private static var activationInFlight = false
 
     /// A media-services reset or audio interruption clears our activation cache.
     @MainActor
@@ -60,6 +62,7 @@ enum PlaybackAudioSessionConfigurator {
         lastActivationTimestamp = 0
         lastActivationModeRawValue = ""
         lastActivationUsedLongFormPolicy = false
+        activationInFlight = false
     }
 
     /// Configure and activate a playback session optimized for long-form media.
@@ -84,6 +87,10 @@ enum PlaybackAudioSessionConfigurator {
             AudioRouteDiagnostics.shared.logCurrentRoute(owner: owner, reason: "activate_playback_session_reused")
             return
         }
+        // Now Playing may request activation several times during one join.
+        // Don't queue duplicate HDMI negotiations while one is in flight.
+        guard !activationInFlight else { return }
+        activationInFlight = true
 
         var usingLongFormPolicy = false
         let preferredPolicy: AVAudioSession.RouteSharingPolicy = .longFormAudio
@@ -113,7 +120,7 @@ enum PlaybackAudioSessionConfigurator {
         }
 
         // Do not activate an unknown category, then incorrectly cache it as ready.
-        guard categoryConfigured else { return }
+        guard categoryConfigured else { activationInFlight = false; return }
 
         // Set preferences before activation. Changing the rate after HDMI starts
         // can force a new hardware format and interrupt an active bitstream.
@@ -132,18 +139,28 @@ enum PlaybackAudioSessionConfigurator {
             }
         }
 
-        do {
-            try session.setActive(true)
-            lastActivationTimestamp = CFAbsoluteTimeGetCurrent()
-            lastActivationModeRawValue = mode.rawValue
-            lastActivationUsedLongFormPolicy = usingLongFormPolicy
-            let routeType = session.currentRoute.outputs.first?.portType.rawValue ?? "unknown"
-            playerDebugLog("🎵 \(owner): Audio session active (route: \(routeType), policy: \(usingLongFormPolicy ? preferredPolicyName : "default"))")
-            AudioRouteDiagnostics.shared.start(owner: owner)
-            AudioRouteDiagnostics.shared.logCurrentRoute(owner: owner, reason: "activate_playback_session")
-        } catch {
-            invalidateActivation()
-            playerDebugLog("🎵 \(owner): Failed to activate audio session: \(error.localizedDescription)")
+        // setActive may block on the media daemon during HDMI negotiation.
+        // Perform it off-main, then update the actor-owned cache on completion.
+        let modeValue = mode.rawValue
+        let usedLongForm = usingLongFormPolicy
+        DispatchQueue.global(qos: .userInitiated).async {
+            let result = Result { try session.setActive(true) }
+            Task { @MainActor in
+                activationInFlight = false
+                switch result {
+                case .success:
+                    lastActivationTimestamp = CFAbsoluteTimeGetCurrent()
+                    lastActivationModeRawValue = modeValue
+                    lastActivationUsedLongFormPolicy = usedLongForm
+                    let routeType = session.currentRoute.outputs.first?.portType.rawValue ?? "unknown"
+                    playerDebugLog("🎵 \(owner): Audio session active (route: \(routeType), policy: \(usedLongForm ? preferredPolicyName : "default"))")
+                    AudioRouteDiagnostics.shared.start(owner: owner)
+                    AudioRouteDiagnostics.shared.logCurrentRoute(owner: owner, reason: "activate_playback_session")
+                case .failure(let error):
+                    invalidateActivation()
+                    playerDebugLog("🎵 \(owner): Failed to activate audio session: \(error.localizedDescription)")
+                }
+            }
         }
     }
 
