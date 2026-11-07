@@ -38,7 +38,11 @@ class LiveTVDataStore: ObservableObject {
 
     /// How far ahead the guide fills. Plex serves 8 days; providers with less
     /// just return nothing past their end.
-    static let epgMaxHoursAhead = 192
+    /// Limit guide expansion to the user's selected number of days ahead.
+    static var epgMaxHoursAhead: Int {
+        let days = UserDefaults.standard.integer(forKey: "liveTVEPGDaysAhead")
+        return (days == 0 ? 8 : min(max(days, 1), 8)) * 24
+    }
     /// Hours per background fill request.
     private static let fillChunkHours = 12
     private var fillTask: Task<Void, Never>?
