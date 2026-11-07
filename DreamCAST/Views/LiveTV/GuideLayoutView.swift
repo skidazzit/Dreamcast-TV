@@ -166,6 +166,7 @@ struct GuideLayoutView: View {
     @State private var miniSession: LiveTVSessionHandoff?
     @AppStorage("liveTVKeepPlayingInGuide") private var keepPlayingInGuide = true
     @AppStorage("liveTVGuideArtwork") private var guideArtwork = false
+    @AppStorage("liveTVGuideStartOnLastWatched") private var startOnLastWatched = true
 
     // Backdrop transition state. Each image is one layer (wash plus crisp
     // artwork), and the incoming layer fades in over the outgoing one.
@@ -214,7 +215,10 @@ struct GuideLayoutView: View {
         // Margins come from `EPGTheme.pageMargin`, like the rest of the app,
         // not from the tvOS safe area (80pt leading, 60pt top).
         .ignoresSafeArea()
-        .onAppear(perform: setupStartTime)
+        .onAppear {
+            setupStartTime()
+            focusOnGuideEntry()
+        }
         .task {
             seedFocus()
             await dataStore.refreshScheduledRecordings()
@@ -552,7 +556,7 @@ struct GuideLayoutView: View {
     }
 
     private func seedFocus() {
-        guard let first = channels.first else {
+        guard let first = preferredGuideChannel() else {
             focusedChannel = nil
             focusedProgram = nil
             return
@@ -562,6 +566,25 @@ struct GuideLayoutView: View {
             focusedProgram = dataStore.getCurrentProgram(for: first)
                 ?? dataStore.epg[first.id]?.first { $0.endTime > timelineStart }
         }
+    }
+
+    /// A guide entry starts on the last watched channel, if that source is visible.
+    /// Category changes are still controlled by the viewer.
+    private func preferredGuideChannel() -> UnifiedChannel? {
+        if startOnLastWatched,
+           let lastId = dataStore.recentChannelIds.first,
+           let last = channels.first(where: { $0.id == lastId }) {
+            return last
+        }
+        return channels.first
+    }
+
+    private func focusOnGuideEntry() {
+        guard let channel = preferredGuideChannel() else { return }
+        focusedChannel = channel
+        focusedProgram = dataStore.getCurrentProgram(for: channel)
+            ?? dataStore.epg[channel.id]?.first { $0.endTime > timelineStart }
+        gridFocusRequest = EPGFocusRequest(channelId: channel.id, token: UUID())
     }
 }
 
