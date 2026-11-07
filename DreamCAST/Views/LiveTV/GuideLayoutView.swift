@@ -216,7 +216,6 @@ struct GuideLayoutView: View {
         .ignoresSafeArea()
         .onAppear(perform: setupStartTime)
         .task {
-            if dataStore.channels.isEmpty { await dataStore.loadChannels() }
             if dataStore.epg.isEmpty {
                 await dataStore.loadEPG(startDate: timelineStart, hours: EPGTheme.initialGuideHours)
             }
