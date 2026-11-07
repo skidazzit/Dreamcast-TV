@@ -4642,7 +4642,7 @@ final class PlexHomeViewController: UIViewController {
     /// come after every library row.
     static func homeRail(plex: CachedHomeRail, otherServers: CachedHomeRail, personal: CachedHomeRail = [],
                          libraryOrder: [String] = [],
-                         kindOf: (String) -> MediaProviderKind? = { MediaProviderKind(providerID: $0) })
+                         kindOf: (String) -> MediaProviderKind? = { .init(providerID: $0) })
         -> [(row: CachedHomeHub, kind: MediaProviderKind)] {
         let tag = { (rows: [CachedHomeHub], kind: MediaProviderKind) in rows.map { (row: $0, kind: kind) } }
         func tagOther(_ rows: [CachedHomeHub]) -> [(row: CachedHomeHub, kind: MediaProviderKind)] {
