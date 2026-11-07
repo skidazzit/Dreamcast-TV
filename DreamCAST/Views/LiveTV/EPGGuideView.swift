@@ -233,6 +233,8 @@ struct EPGGuide: UIViewRepresentable {
         private(set) var programs: [[UnifiedProgram]] = []
         private var lastSignature: Int = 0
         private var currentSection = 0
+        /// Only the row holding tvOS focus may animate its channel name.
+        private var highlightedSection: Int?
         private var pendingFocus: IndexPath?
         var didRestScroll = false
         /// The committed horizontal offset. The timeline only moves sideways on a
@@ -340,6 +342,7 @@ struct EPGGuide: UIViewRepresentable {
             case EPGLayout.kindChannel:
                 let v = cv.dequeueReusableSupplementaryView(ofKind: kind, withReuseIdentifier: ChannelColumnView.reuseID, for: indexPath) as! ChannelColumnView
                 if let channel = sections[safe: indexPath.section] { v.configure(channel, transparent: parent.transparent) }
+                v.setHighlighted(indexPath.section == highlightedSection)
                 return v
             case EPGLayout.kindTime:
                 let v = cv.dequeueReusableSupplementaryView(ofKind: kind, withReuseIdentifier: TimeRulerView.reuseID, for: indexPath) as! TimeRulerView
@@ -355,6 +358,14 @@ struct EPGGuide: UIViewRepresentable {
         // Focus → update the info bar; hold the timeline's horizontal position
         // across channel changes so wide programmes don't drag the guide sideways.
         func collectionView(_ cv: UICollectionView, didUpdateFocusIn context: UICollectionViewFocusUpdateContext, with coordinator: UIFocusAnimationCoordinator) {
+            let nextSection = context.nextFocusedIndexPath?.section
+            if let oldSection = highlightedSection, oldSection != nextSection {
+                channelView(in: cv, section: oldSection)?.setHighlighted(false)
+            }
+            highlightedSection = nextSection
+            if let nextSection {
+                channelView(in: cv, section: nextSection)?.setHighlighted(true)
+            }
             guard let ip = context.nextFocusedIndexPath,
                   let channel = sections[safe: ip.section],
                   let program = programs[safe: ip.section]?[safe: ip.item] else { return }
@@ -396,6 +407,12 @@ struct EPGGuide: UIViewRepresentable {
                     }
                 }
             }
+        }
+
+        private func channelView(in collectionView: UICollectionView, section: Int) -> ChannelColumnView? {
+            collectionView.supplementaryView(
+                forElementKind: EPGLayout.kindChannel,
+                at: IndexPath(item: 0, section: section)) as? ChannelColumnView
         }
 
         /// Holds Left on a row's first programme (`item == 0`) so focus does not
@@ -1639,6 +1656,7 @@ final class ChannelColumnView: UICollectionReusableView {
     private let sideNameLabel = UILabel()
     private let nameViewport = UIView()
     private var marqueeSignature: String?
+    private var marqueeEnabled = false
     private var logoLoadTask: Task<Void, Never>?
     private var currentLogoURL: URL?
     private var logoHeight: NSLayoutConstraint!
@@ -1737,6 +1755,8 @@ final class ChannelColumnView: UICollectionReusableView {
         logoCenterX.constant = EPGTheme.tivimate ? -55 : 0
         sideNameLabel.text = channel.name
         nameViewport.isHidden = !EPGTheme.tivimate
+        marqueeEnabled = false
+        sideNameLabel.layer.removeAnimation(forKey: "channelMarquee")
         marqueeSignature = nil
         setNeedsLayout()
         nameLabel.isHidden = EPGTheme.tivimate || (EPGTheme.showLogos && channel.logoURL != nil)
@@ -1782,6 +1802,7 @@ final class ChannelColumnView: UICollectionReusableView {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        marqueeEnabled = false
         sideNameLabel.layer.removeAnimation(forKey: "channelMarquee")
         marqueeSignature = nil
         logoLoadTask?.cancel()
@@ -1803,6 +1824,14 @@ final class ChannelColumnView: UICollectionReusableView {
         updateChannelMarquee()
     }
 
+    func setHighlighted(_ highlighted: Bool) {
+        guard marqueeEnabled != highlighted else { return }
+        marqueeEnabled = highlighted
+        sideNameLabel.layer.removeAnimation(forKey: "channelMarquee")
+        marqueeSignature = nil
+        setNeedsLayout()
+    }
+
     /// Scroll long channel titles gently inside the name column. Using a
     /// clipped label layer avoids moving any focus or collection-view cells.
     private func updateChannelMarquee() {
@@ -1811,13 +1840,13 @@ final class ChannelColumnView: UICollectionReusableView {
               nameViewport.bounds.width > 0 else { return }
         let width = nameViewport.bounds.width
         let textWidth = ceil((title as NSString).size(withAttributes: [.font: sideNameLabel.font!]).width)
-        let signature = "\(title)|\(Int(width))"
+        let signature = "\(title)|\(Int(width))|\(marqueeEnabled)"
         guard marqueeSignature != signature else { return }
         marqueeSignature = signature
         sideNameLabel.layer.removeAnimation(forKey: "channelMarquee")
         sideNameLabel.frame = CGRect(x: 0, y: 0, width: max(width, textWidth), height: nameViewport.bounds.height)
         let travel = textWidth - width
-        guard travel > 4 else { return }
+        guard marqueeEnabled, travel > 4 else { return }
         let scroll = CABasicAnimation(keyPath: "transform.translation.x")
         scroll.fromValue = 0
         scroll.toValue = -(travel + 8)
