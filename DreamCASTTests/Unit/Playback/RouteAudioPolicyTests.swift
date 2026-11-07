@@ -22,6 +22,15 @@ final class RouteAudioPolicyTests: XCTestCase {
         XCTAssertEqual(health.consecutiveBadSamples, 0)
     }
 
+    func testLiveBufferBoostsAfterSustainedSlowSource() {
+        var health = LiveBufferHealth()
+        XCTAssertFalse(health.observe(forwardSeconds: 5.8, droppedFrames: nil, waiting: false))
+        XCTAssertFalse(health.observe(forwardSeconds: 4.7, droppedFrames: nil, waiting: false))
+        XCTAssertTrue(health.observe(forwardSeconds: 5.2, droppedFrames: nil, waiting: false))
+        health.didApplyBoost()
+        XCTAssertFalse(health.observe(forwardSeconds: 2.0, droppedFrames: nil, waiting: true))
+    }
+
     func testLocalRouteKeepsNativePolicy() {
         let snapshot = RouteAudioSnapshot(
             isAirPlay: false,
