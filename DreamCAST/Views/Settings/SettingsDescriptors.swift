@@ -203,6 +203,10 @@ enum SettingsDescriptorStore {
             icon: "antenna.radiowaves.left.and.right",
             description: "Quality on cellular, a hotspot, Low Data Mode or a remote connection. Auto measures your connection and converts only when the file will not fit."
         ),
+        "plexNativeHLSMemoryTest": SettingDescriptor(
+            icon: "memorychip",
+            description: "Test Plex video playback through the server's HLS stream instead of Aether's local bridge. Plex may remux or transcode, affecting Dolby Vision and audio. Off uses the usual player."
+        ),
         "streamingQualityOption": SettingDescriptor(
             icon: "dial.medium",
             description: "Original plays the file as is. Auto converts only when your connection needs it. A fixed rate converts anything above it, dropping HDR and Atmos."
