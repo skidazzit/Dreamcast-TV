@@ -483,6 +483,7 @@ enum SettingsContent {
                             kind: .navigationValue(.detailRatingPicker, value: { MediaRating.detailSource.name })),
 
             .header("Live TV"),
+            SettingsRowItem(id: "appearanceGroups", title: "Groups", kind: .navigation(.liveTVGroups)),
         ] + liveTVLookRows + [
             .header("Extras"),
             toggle("easterEggs", "Easter Eggs", key: EasterEggs.key, default: true)
@@ -512,7 +513,27 @@ enum SettingsContent {
             SettingsRowItem(id: "guideRowSize", title: "Guide Row Size",
                             kind: .cycle(value: { ["Compact", "Normal", "Large"][min(max(EPGTheme.rowSize, 0), 2)] },
                                          next: { SettingsStore.setInt("liveTVGuideRowSize", (EPGTheme.rowSize + 1) % 3) })),
+            SettingsRowItem(id: "guideFontSize", title: "Guide Text Size",
+                            kind: .cycle(value: { ["Small", "Normal", "Large"][EPGTheme.fontSize] },
+                                         next: { SettingsStore.setInt("liveTVGuideFontSize", (EPGTheme.fontSize + 1) % 3) })),
+            SettingsRowItem(id: "guideOpacity", title: "Guide Cell Opacity",
+                            kind: .cycle(value: {
+                                ["65%", "82%", "100%"][min(max(SettingsStore.int("liveTVGuideOpacity", default: 2), 0), 2)]
+                            }, next: {
+                                SettingsStore.setInt("liveTVGuideOpacity", (SettingsStore.int("liveTVGuideOpacity", default: 2) + 1) % 3)
+                            })),
+            SettingsRowItem(id: "guideNamePrefix", title: "Remove Channel Prefixes",
+                            kind: .textEntry(value: { SettingsStore.string(LiveTVChannelNames.prefixKey, default: "") },
+                                             placeholder: "None", hint: "Comma-separated prefixes, such as US: , HD |",
+                                             suggestions: [], keyboardType: .default,
+                                             set: { SettingsStore.setString(LiveTVChannelNames.prefixKey, $0) })),
+            SettingsRowItem(id: "guideNameSuffix", title: "Remove Channel Suffixes",
+                            kind: .textEntry(value: { SettingsStore.string(LiveTVChannelNames.suffixKey, default: "") },
+                                             placeholder: "None", hint: "Comma-separated suffixes, such as [HD], (US)",
+                                             suggestions: [], keyboardType: .default,
+                                             set: { SettingsStore.setString(LiveTVChannelNames.suffixKey, $0) })),
             toggle("guideChannelLogos", "Channel Logos", key: "liveTVGuideShowLogos", default: true),
+            toggle("guideElapsedShade", "Shade Past Programs", key: "liveTVGuideShadeElapsed", default: true),
             toggle("guideArtwork", "Program Artwork Background", key: "liveTVGuideArtwork", default: false),
             toggle("guideClock", "Guide Clock", key: "liveTVGuideShowClock", default: true)
         ]
@@ -737,7 +758,16 @@ enum SettingsContent {
         [
             SettingsRowItem(id: "liveTVSources", title: "Live TV Sources", kind: .navigation(.iptv)),
             SettingsRowItem(id: "liveTVFavorites", title: "Favorites", kind: .navigation(.liveTVFavorites)),
-            SettingsRowItem(id: "liveTVGroups", title: "Reorder Playlist Groups", kind: .navigation(.liveTVGroups)),
+            SettingsRowItem(id: "liveTVGroups", title: "Show, Hide & Reorder Groups", kind: .navigation(.liveTVGroups)),
+            .header("EPG"),
+            SettingsRowItem(id: "epgDaysAhead", title: "Guide Days Ahead",
+                            kind: .cycle(value: { "\(LiveTVDataStore.epgMaxHoursAhead / 24) days" },
+                                         next: {
+                                             let values = [1, 3, 5, 8]
+                                             let current = LiveTVDataStore.epgMaxHoursAhead / 24
+                                             let index = values.firstIndex(of: current) ?? values.count - 1
+                                             SettingsStore.setInt("liveTVEPGDaysAhead", values[(index + 1) % values.count])
+                                         })),
             .header("Playlist Updates"),
             toggle("autoFetchPlaylists", "Auto Fetch on Startup",
                    key: LiveTVDataStore.autoFetchOnStartupKey, default: true),
@@ -813,7 +843,8 @@ enum SettingsContent {
         }
         return groups.map { group in
             SettingsRowItem(id: "group_\(group)", verbatim: group,
-                            kind: .action(destructive: false, handler: { _ in }),
+                            kind: .cycle(value: { LiveTVGroupOrder.hidden().contains(group) ? "Hidden" : "Shown" },
+                                         next: { LiveTVGroupOrder.setHidden(group, hidden: !LiveTVGroupOrder.hidden().contains(group)) }),
                             onReorder: { up in LiveTVGroupOrder.move(group, up: up, among: groups) })
         }
     }
