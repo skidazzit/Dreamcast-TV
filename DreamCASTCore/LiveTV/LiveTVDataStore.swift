@@ -46,7 +46,6 @@ class LiveTVDataStore: ObservableObject {
     /// Hours per background fill request.
     private static let fillChunkHours = 12
     private var fillTask: Task<Void, Never>?
-    private var keepFreshTask: Task<Void, Never>?
     /// VOD players currently up. While any is, the half-day fill holds: the far-off guide (a 16 MB,
     /// ~6 s `/grid` response per half day on a slow PMS) is not needed behind a film, and filling it
     /// then cost the player network and main-actor time. A count, not a flag, so a player that
@@ -136,6 +135,9 @@ class LiveTVDataStore: ObservableObject {
     private var channelLoad: (task: Task<Void, Never>, generation: Int)?
     private var epgLoad: (task: Task<Void, Never>, generation: Int, channelCount: Int, window: DateInterval)?
     private var backgroundPreloadTask: Task<Void, Never>?
+    /// The sidebar may be rebuilt many times. Startup fetch runs once per app
+    /// process, never once per sidebar/guide appearance.
+    private var didScheduleStartupFetch = false
 
     // MARK: - Freshness tracking
 
@@ -251,7 +253,6 @@ class LiveTVDataStore: ObservableObject {
         viewings = userDefaults.data(forKey: viewingsKey)
             .flatMap { try? JSONDecoder().decode([LiveViewing].self, from: $0) } ?? []
         loadSavedSources()
-        observeAppLifecycle()
         plexContentTokenChanged()
     }
 
@@ -337,19 +338,6 @@ class LiveTVDataStore: ObservableObject {
             percent: max(status.percent, min(percent, 99)), message: message, finished: false, failed: false)
     }
 
-    /// Re-checks the guide every 10 minutes while the app is open, so a guide
-    /// left on screen (or behind the player) keeps moving forward.
-    private func keepGuideFresh() {
-        guard keepFreshTask == nil else { return }
-        keepFreshTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(Self.defaultMaxAge / 3))
-                await self?.refreshIfStale()
-                self?.fillGuide()
-            }
-        }
-    }
-
     /// Pulls the rest of the guide in half-day requests after the first
     /// window paints. Stops at the ceiling or on a failure; the next refresh
     /// starts it again.
@@ -375,21 +363,6 @@ class LiveTVDataStore: ObservableObject {
         guard playersHoldingGuideFill > 0 else { return }
         playersHoldingGuideFill -= 1
         if playersHoldingGuideFill == 0 { fillGuide() }
-    }
-
-    /// Refresh the guide when the app returns to the foreground. tvOS suspends
-    /// for long stretches, so this is the most common way the grid goes stale.
-    private func observeAppLifecycle() {
-        NotificationCenter.default.addObserver(
-            forName: UIApplication.willEnterForegroundNotification,
-            object: nil, queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                // A server that was down at launch gets its DVR found now.
-                self?.plexContentTokenChanged()
-                await self?.refreshIfStale()
-            }
-        }
     }
 
     // MARK: - Source Management
@@ -1250,7 +1223,6 @@ class LiveTVDataStore: ObservableObject {
         await task.value
         if epgLoad?.task == task { epgLoad = nil }
         fillGuide()
-        if !epg.isEmpty { keepGuideFresh() }
     }
 
     /// Whether a guide load for `loading` answers a request for `requested`.
@@ -1389,8 +1361,8 @@ class LiveTVDataStore: ObservableObject {
     /// Start background preloading of channels and EPG data with low priority.
     /// Call this at app startup to have data ready when user visits Live TV.
     func startBackgroundPreload() {
-        // Cancel any existing preload
-        backgroundPreloadTask?.cancel()
+        guard !didScheduleStartupFetch else { return }
+        didScheduleStartupFetch = true
 
         backgroundPreloadTask = Task(priority: .background) {
 
