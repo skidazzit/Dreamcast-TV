@@ -46,7 +46,7 @@ final class JellyfinProvider: MediaProvider, @unchecked Sendable {
     /// What every list call asks for beyond the defaults: the counts behind
     /// "12/24 watched", and the parent image ids that list responses omit
     /// otherwise. Detail calls (GET /Items/{id}) return every field.
-    private static let listFields = URLQueryItem(
+    nonisolated private static let listFields = URLQueryItem(
         name: "fields", value: "Overview,RecursiveItemCount,SortName,ParentId,MediaSourceCount,Genres,ProviderIds"
     )
 
@@ -303,10 +303,10 @@ final class JellyfinProvider: MediaProvider, @unchecked Sendable {
         }, uniquingKeysWith: { first, _ in first })
     }
 
-    private func resumeItems(parentID: String?, limit: Int, fields: URLQueryItem = listFields) async throws -> [JFItem] {
+    private func resumeItems(parentID: String?, limit: Int, fields: URLQueryItem? = nil) async throws -> [JFItem] {
         var query = [URLQueryItem(name: "limit", value: "\(limit)"),
                      URLQueryItem(name: "mediaTypes", value: "Video"),
-                     fields]
+                     fields ?? Self.listFields]
         if let parentID { query.append(URLQueryItem(name: "parentId", value: parentID)) }
         let result: JFQueryResult = try await client.get("UserItems/Resume", query)
         return result.items ?? []
@@ -314,10 +314,10 @@ final class JellyfinProvider: MediaProvider, @unchecked Sendable {
 
     /// `enableResumable=false` keeps a half-watched episode, already in
     /// Resume, out of Next Up (measured on 12.1). A failure costs only these.
-    private func nextUpEpisodes(parentID: String?, limit: Int, fields: URLQueryItem = listFields) async -> [JFItem] {
+    private func nextUpEpisodes(parentID: String?, limit: Int, fields: URLQueryItem? = nil) async -> [JFItem] {
         var query = [URLQueryItem(name: "limit", value: "\(limit)"),
                      URLQueryItem(name: "enableResumable", value: "false"),
-                     fields]
+                     fields ?? Self.listFields]
         if let parentID { query.append(URLQueryItem(name: "parentId", value: parentID)) }
         let result: JFQueryResult? = try? await client.get("Shows/NextUp", query)
         return result?.items ?? []
@@ -477,7 +477,7 @@ final class JellyfinProvider: MediaProvider, @unchecked Sendable {
         var running: Task<[OwnedEntry], Error>?
     }
 
-    private static let ownedIndexLifetime: TimeInterval = 600
+    nonisolated private static let ownedIndexLifetime: TimeInterval = 600
     private let ownedIndexState = OSAllocatedUnfairLock(initialState: OwnedIndex())
 
     // ponytail: the whole catalog's ids in memory; page the listing if a server's catalog makes this heavy.
