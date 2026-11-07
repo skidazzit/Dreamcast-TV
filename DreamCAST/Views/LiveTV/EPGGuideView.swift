@@ -268,7 +268,6 @@ struct EPGGuide: UIViewRepresentable {
         let timelineMoved = context.coordinator.lastTimelineStart.map { $0 != timelineStart } ?? false
         let dataChanged = context.coordinator.apply(self, to: layout)
         if dataChanged {
-            uiView.cancelPendingGridFocus()
             cv.reloadData()
             if transparent, !context.coordinator.didRestScroll {
                 context.coordinator.didRestScroll = true
@@ -322,8 +321,6 @@ struct EPGGuide: UIViewRepresentable {
         /// Only the row holding tvOS focus may animate its channel name.
         private var highlightedSection: Int?
         private var pendingFocus: IndexPath?
-        private var pendingVerticalTarget: IndexPath?
-        private var pendingVerticalSince: Date = .distantPast
         var didRestScroll = false
         /// The committed horizontal offset. The timeline only moves sideways on a
         /// deliberate left/right move (or drag); during channel changes and when
@@ -382,10 +379,6 @@ struct EPGGuide: UIViewRepresentable {
                 return false
             }
             lastSignature = signature
-            // A new group or refreshed guide changes section indexes.
-            // Never carry an in-flight D-pad target into the new list.
-            pendingVerticalTarget = nil
-            pendingVerticalSince = .distantPast
 
             let ppm = EPGTheme.pointsPerMinute
             let total = Double(p.totalMinutes)
@@ -476,7 +469,6 @@ struct EPGGuide: UIViewRepresentable {
             guard let ip = context.nextFocusedIndexPath,
                   let channel = sections[safe: ip.section],
                   let program = programs[safe: ip.section]?[safe: ip.item] else { return }
-            pendingVerticalTarget = nil
             let now = parent.now
             currentSection = ip.section
             currentFocusedIsLive = program.isLive(at: now)
@@ -511,9 +503,7 @@ struct EPGGuide: UIViewRepresentable {
                     }
                     targetY = max(targetY, -cv.contentInset.top)
                     if abs(targetY - cv.contentOffset.y) > 0.5 || abs(lockedX - cv.contentOffset.x) > 0.5 {
-                        // Don't queue a scroll animation for every Up/Down
-                        // press. Rapid remote input should follow focus at once.
-                        cv.setContentOffset(CGPoint(x: lockedX, y: targetY), animated: false)
+                        cv.setContentOffset(CGPoint(x: lockedX, y: targetY), animated: true)
                     }
                 }
             }
@@ -532,22 +522,7 @@ struct EPGGuide: UIViewRepresentable {
         func collectionView(_ collectionView: UICollectionView,
                             shouldUpdateFocusIn context: UICollectionViewFocusUpdateContext) -> Bool {
             if context.focusHeading == .up || context.focusHeading == .down {
-                if context.nextFocusedIndexPath == pendingVerticalTarget,
-                   pendingVerticalTarget != nil { return true }
-                guard let focused = context.previouslyFocusedIndexPath else { return true }
-                let down = context.focusHeading == .down
-                guard Self.verticalTargetSection(from: focused.section, engineSection: nil,
-                                                 movingDown: down, sectionCount: programs.count) != nil else {
-                    // Only the real edge may leave the grid (Up to groups).
-                    return !down
-                }
-                // Never accept the engine's geometric choice. Its target can
-                // be hours away or another focus region when rows scroll out.
-                // Move after the current focus pass, not inside its delegate.
-                DispatchQueue.main.async { [weak self] in
-                    _ = self?.stepChannel(down: down, from: focused)
-                }
-                return false
+                return shouldAllowVerticalMove(context, in: collectionView)
             }
             guard context.focusHeading == .left,
                   let prev = context.previouslyFocusedIndexPath,
@@ -673,6 +648,26 @@ struct EPGGuide: UIViewRepresentable {
 
         // MARK: Focus placement
 
+        /// Rivulet's original vertical focus rule: keep the same programme
+        /// time when the focus engine chooses a different row.
+        private func shouldAllowVerticalMove(_ context: UICollectionViewFocusUpdateContext,
+                                             in collectionView: UICollectionView) -> Bool {
+            guard let prev = context.previouslyFocusedIndexPath,
+                  let section = Self.verticalTargetSection(
+                    from: prev.section, engineSection: context.nextFocusedIndexPath?.section,
+                    movingDown: context.focusHeading == .down, sectionCount: programs.count)
+            else { return true }
+            let leavingGrid = context.nextFocusedIndexPath == nil
+            let next = context.nextFocusedIndexPath ?? IndexPath(item: -1, section: section)
+            let anchor = clampedAnchor(in: collectionView)
+            guard let desired = programIndex(inSection: next.section, covering: anchor),
+                  desired != next.item else { return true }
+            let target = IndexPath(item: desired, section: next.section)
+            guard collectionView.cellForItem(at: target) != nil else { return !leavingGrid }
+            requestFocus(target)
+            return false
+        }
+
         /// The row an Up/Down move goes to, or nil when it is not one this
         /// guide steers: a move along the row, or leaving the grid at the top
         /// (to the category pills) or bottom edge. `engineSection` nil means the
@@ -719,68 +714,6 @@ struct EPGGuide: UIViewRepresentable {
                 return
             }
             container.focusGridCell(at: indexPath, in: cv)
-        }
-
-        /// Move by exactly one channel, even when the next row is off-screen.
-        /// The tvOS focus engine can otherwise jump to a distant programme or
-        /// return to the group bar when its geometric target is not visible.
-        @discardableResult
-        func stepChannel(down: Bool, from requestedIndexPath: IndexPath? = nil) -> Bool {
-            guard let cv = collectionView,
-                  let layout = cv.collectionViewLayout as? EPGLayout else { return false }
-            let focused: IndexPath?
-            if let pendingVerticalTarget,
-               Date().timeIntervalSince(pendingVerticalSince) < 0.8,
-               programs.indices.contains(pendingVerticalTarget.section) {
-                // The next press may arrive before UIKit finishes its focus
-                // update. Advance from the requested row, not the old cell.
-                focused = pendingVerticalTarget
-            } else if let requestedIndexPath {
-                focused = requestedIndexPath
-            } else if let cell = UIFocusSystem.focusSystem(for: cv)?.focusedItem as? UICollectionViewCell {
-                focused = cv.indexPath(for: cell)
-            } else {
-                focused = nil
-            }
-            guard let focused else { return false }
-            let nextSection = focused.section + (down ? 1 : -1)
-            guard programs.indices.contains(nextSection) else { return down }
-            let time = clampedAnchor(in: cv)
-            guard let item = programIndex(inSection: nextSection, covering: time) else { return true }
-
-            // Realize the target before asking tvOS to focus it. This is needed
-            // for long playlists, where nearby rows may not have cells yet.
-            let rowH = EPGTheme.rowHeight
-            let inset = layout.rulerBottomInset
-            let visibleTop = cv.contentOffset.y + inset
-            let visibleBottom = cv.contentOffset.y + cv.bounds.height - cv.contentInset.bottom
-            let top = CGFloat(nextSection) * rowH
-            let bottom = top + rowH
-            var y = cv.contentOffset.y
-            if top < visibleTop + rowH { y = top - inset - rowH }
-            if bottom > visibleBottom - rowH { y += bottom - (visibleBottom - rowH) }
-            let maxY = max(-cv.contentInset.top,
-                           layout.collectionViewContentSize.height - cv.bounds.height + cv.contentInset.bottom)
-            let target = IndexPath(item: item, section: nextSection)
-            if let frame = layout.layoutAttributesForItem(at: target)?.frame {
-                let visibleLeft = lockedX + EPGTheme.channelColumnWidth
-                let visibleRight = lockedX + cv.bounds.width
-                if frame.maxX <= visibleLeft || frame.minX >= visibleRight {
-                    // Some EPGs have large gaps. Bring their nearest programme
-                    // into view instead of retrying focus on an unseen cell.
-                    lockedX = min(max(frame.minX - EPGTheme.channelColumnWidth - 12,
-                                      -EPGTheme.channelColumnWidth),
-                                  max(-EPGTheme.channelColumnWidth,
-                                      layout.collectionViewContentSize.width - cv.bounds.width))
-                }
-            }
-            cv.setContentOffset(CGPoint(x: lockedX, y: min(max(y, -cv.contentInset.top), maxY)), animated: false)
-            cv.layoutIfNeeded()
-            print("[GuideFocus] Down=\(down) from=\(focused.section) to=\(nextSection) item=\(item)")
-            pendingVerticalTarget = target
-            pendingVerticalSince = Date()
-            requestFocus(target)
-            return true
         }
 
         /// Scroll `channelId`'s row into view at the live edge of the timeline
@@ -845,12 +778,11 @@ final class EPGContainerView: UIView {
     }()
     private var clockTimer: Timer?
     private weak var pendingGridFocusTarget: UIView?
-    private var focusRequestGeneration = 0
     private weak var pendingCategoryFocusTarget: UIView?
     private var pendingMiniPlayerFocus = false
     private var preferredDownChannelID: String?
     private var focusPreferredDownChannel: ((String) -> Void)?
-    private var gridVerticalSwipeBinding: DirectionalInputBinding?
+    private var gridUpSwipeBinding: DirectionalInputBinding?
     /// The channel still playing after Back, in the corner (issue #318).
     private let miniPlayer = LiveMiniPlayerView()
     private var onMiniPlayerSelect: (() -> Void)?
@@ -890,24 +822,17 @@ final class EPGContainerView: UIView {
             Task { @MainActor [weak self] in self?.setClock(Date()) }
         }
         categoryBar.onMoveDown = { [weak self] in self?.moveFocusIntoGrid() }
-        gridVerticalSwipeBinding = DirectionalInputBinding(
+        gridUpSwipeBinding = DirectionalInputBinding(
             gatedSwipesOn: cv,
-            directions: [.up, .down],
+            directions: [.up],
             shouldHandle: { [weak cv] direction in
-                guard (direction == .up || direction == .down), let cv,
+                guard direction == .up, let cv,
                       let focused = UIFocusSystem.focusSystem(for: cv)?.focusedItem as? UICollectionViewCell,
-                      cv.indexPath(for: focused) != nil else { return false }
-                return true
+                      let indexPath = cv.indexPath(for: focused) else { return false }
+                return indexPath.section == 0
             },
-            onSwipe: { [weak self, weak cv] direction in
-                guard let self, let cv else { return }
-                if direction == .up,
-                   let cell = UIFocusSystem.focusSystem(for: cv)?.focusedItem as? UICollectionViewCell,
-                   cv.indexPath(for: cell)?.section == 0 {
-                    self.moveFocusToCategories()
-                } else {
-                    _ = (cv.delegate as? EPGGuide.Coordinator)?.stepChannel(down: direction == .down)
-                }
+            onSwipe: { [weak self] _ in
+                self?.moveFocusToCategories()
             })
 
         miniPlayer.isFocusable = true
@@ -1035,51 +960,14 @@ final class EPGContainerView: UIView {
     /// requesting environment contains focus, so this asks as the container,
     /// which contains the whole grid.
     func focusGridCell(at indexPath: IndexPath, in cv: UICollectionView) {
-        focusRequestGeneration += 1
-        focusGridCell(at: indexPath, in: cv, retries: 25, generation: focusRequestGeneration)
-    }
-
-    func cancelPendingGridFocus() {
-        focusRequestGeneration += 1
-        pendingGridFocusTarget = nil
-    }
-
-    private func focusGridCell(at indexPath: IndexPath, in cv: UICollectionView,
-                               retries: Int, generation: Int) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { [weak self, weak cv] in
-            guard let self, let cv, self.focusRequestGeneration == generation else { return }
-            guard self.window != nil, cv.bounds.height > 0 else {
-                // SwiftUI may request focus before tvOS attaches the guide.
-                if retries > 0 { self.focusGridCell(at: indexPath, in: cv, retries: retries - 1, generation: generation) }
-                return
-            }
+        DispatchQueue.main.async { [weak self, weak cv] in
+            guard let self, let cv, self.pendingGridFocusTarget == nil else { return }
             cv.layoutIfNeeded()
-            guard let cell = cv.cellForItem(at: indexPath) else {
-                // The first guide paint can precede the grid's layout pass.
-                // Keep the autoplay focus request until its row exists.
-                if retries > 0 { self.focusGridCell(at: indexPath, in: cv, retries: retries - 1, generation: generation) }
-                return
-            }
-            guard self.pendingGridFocusTarget == nil else { return }
+            guard let cell = cv.cellForItem(at: indexPath) else { return }
             self.pendingGridFocusTarget = cell
-            // The initial focus may still belong to the outer SwiftUI shell.
-            // A container-local request is then ignored. Ask the window's
-            // focus system directly, as the other UIKit grids in DreamCAST do.
-            if let system = UIFocusSystem.focusSystem(for: cv) {
-                system.requestFocusUpdate(to: cell)
-                system.updateFocusIfNeeded()
-            } else {
-                self.setNeedsFocusUpdate()
-                self.updateFocusIfNeeded()
-            }
+            self.setNeedsFocusUpdate()
+            self.updateFocusIfNeeded()
             self.pendingGridFocusTarget = nil
-            let focused = UIFocusSystem.focusSystem(for: cv)?.focusedItem as? UIView
-            if focused !== cell && !(focused?.isDescendant(of: cell) ?? false) {
-                print("[GuideFocus] Focus request deferred: section=\(indexPath.section), retries=\(retries)")
-                if retries > 0 { self.focusGridCell(at: indexPath, in: cv, retries: retries - 1, generation: generation) }
-            } else {
-                print("[GuideFocus] Focus landed: section=\(indexPath.section), item=\(indexPath.item)")
-            }
         }
     }
 
@@ -1865,16 +1753,14 @@ final class ProgramCellView: UICollectionViewCell, KeepsUpAtTop {
 
     override var canBecomeFocused: Bool { true }
 
-    /// The focused cell owns physical Up/Down presses. This avoids tvOS
-    /// choosing a programme on another time or leaving the grid entirely.
+    /// Rivulet's original Up handoff. Other arrows go through tvOS focus.
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-        if let vertical = presses.first(where: { $0.type == .upArrow || $0.type == .downArrow }),
+        if presses.contains(where: { $0.type == .upArrow }),
            let cv = enclosingCollectionView,
-           let indexPath = cv.indexPath(for: self) {
-            if vertical.type == .upArrow && indexPath.section == 0,
-               enclosingEPGContainer?.moveFocusToCategories() == true { return }
-            if (cv.delegate as? EPGGuide.Coordinator)?.stepChannel(
-                down: vertical.type == .downArrow, from: indexPath) == true { return }
+           cv.indexPath(for: self)?.section == 0,
+           let container = enclosingEPGContainer,
+           container.moveFocusToCategories() {
+            return
         }
         super.pressesBegan(presses, with: event)
     }
