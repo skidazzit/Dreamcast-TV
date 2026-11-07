@@ -3242,7 +3242,8 @@ final class UniversalPlayerViewModel: ObservableObject {
     /// server wants (Plex's token and client profile).
     /// `maxBitrate` (bps) caps it; nil leaves the bitrate to the server.
     func switchToProviderTranscode(resumeTime: TimeInterval, maxBitrate: Int? = nil,
-                                   tracks: TrackPicks = TrackPicks()) async throws -> (url: URL, headers: [String: String])? {
+                                   tracks: TrackPicks? = nil) async throws -> (url: URL, headers: [String: String])? {
+        let tracks = tracks ?? TrackPicks()
         guard case .provider(var playback) = source else { return nil }
         playback.stream = try await playback.provider.transcodeStream(
             for: playback.item.ref,
