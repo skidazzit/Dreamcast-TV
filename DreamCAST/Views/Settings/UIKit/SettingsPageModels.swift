@@ -605,6 +605,8 @@ enum SettingsContent {
                             kind: .navigationValue(.awayQualityPicker, value: {
                                 StreamingQuality.setting(home: false).label
                             })),
+            toggle("plexNativeHLSMemoryTest", "Plex HLS Memory Test",
+                   key: "plexNativeHLSMemoryTest", default: false),
             .header("Remote"),
             SettingsRowItem(id: "skipLength", title: "Skip Forward",
                             kind: .navigationValue(.skipIntervalPicker, value: {
