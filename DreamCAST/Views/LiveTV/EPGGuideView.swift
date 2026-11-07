@@ -724,7 +724,11 @@ struct EPGGuide: UIViewRepresentable {
             guard let cv = collectionView,
                   let layout = cv.collectionViewLayout as? EPGLayout,
                   let section = sections.firstIndex(where: { $0.id == channelId }),
-                  let item = liveItem(inSection: section) else { return }
+                  let item = liveItem(inSection: section) else {
+                print("[GuideFocus] Channel not ready: \(channelId), rows=\(sections.count)")
+                return
+            }
+            print("[GuideFocus] Target channel=\(channelId), section=\(section), item=\(item)")
             lastFocusedChannelId = channelId
             anchorTime = parent.now
             currentSection = section
@@ -936,12 +940,17 @@ final class EPGContainerView: UIView {
     /// requesting environment contains focus, so this asks as the container,
     /// which contains the whole grid.
     func focusGridCell(at indexPath: IndexPath, in cv: UICollectionView) {
-        focusGridCell(at: indexPath, in: cv, retries: 4)
+        focusGridCell(at: indexPath, in: cv, retries: 25)
     }
 
     private func focusGridCell(at indexPath: IndexPath, in cv: UICollectionView, retries: Int) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { [weak self, weak cv] in
-            guard let self, let cv, self.window != nil else { return }
+            guard let self, let cv else { return }
+            guard self.window != nil, cv.bounds.height > 0 else {
+                // SwiftUI may request focus before tvOS attaches the guide.
+                if retries > 0 { self.focusGridCell(at: indexPath, in: cv, retries: retries - 1) }
+                return
+            }
             cv.layoutIfNeeded()
             guard let cell = cv.cellForItem(at: indexPath) else {
                 // The first guide paint can precede the grid's layout pass.
