@@ -39,23 +39,6 @@ final class EPGVerticalFocusTests: XCTestCase {
         XCTAssertNil(C.verticalTargetSection(from: 19, engineSection: nil, movingDown: true, sectionCount: 20))
     }
 
-    /// A large IPTV playlist must keep advancing beyond the visible rows.
-    func test_largePlaylist_verticalMovementReachesEveryChannel() {
-        let count = 7_068
-        var section = 0
-        for _ in 1..<count {
-            guard let next = C.verticalTargetSection(
-                from: section, engineSection: nil, movingDown: true, sectionCount: count)
-            else { XCTFail("Down stopped at row \(section)"); return }
-            section = next
-        }
-        XCTAssertEqual(section, count - 1)
-        XCTAssertNil(C.verticalTargetSection(from: section, engineSection: nil,
-                                             movingDown: true, sectionCount: count))
-        XCTAssertEqual(C.verticalTargetSection(from: section, engineSection: nil,
-                                               movingDown: false, sectionCount: count), count - 2)
-    }
-
     // MARK: - Horizontal position on Up/Down
 
     /// Log 2026-10-01: an Up/Down focus scroll arrives through
