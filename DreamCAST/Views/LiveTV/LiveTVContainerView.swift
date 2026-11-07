@@ -38,7 +38,6 @@ struct LiveTVContainerView: View {
     var sourceIdFilter: String?
 
     @AppStorage("liveTVLayout") private var liveTVLayoutRaw = LiveTVLayout.fallback.rawValue
-    @StateObject private var dataStore = LiveTVDataStore.shared
 
     private var layout: LiveTVLayout {
         LiveTVLayout(rawValue: liveTVLayoutRaw) ?? .fallback
@@ -54,13 +53,6 @@ struct LiveTVContainerView: View {
                     .ignoresSafeArea()
                     .id(sourceIdFilter ?? "all")
             }
-        }
-        .task {
-            // Elevate EPG loading priority when user visits Live TV
-            await dataStore.elevatePreloadPriority()
-            // Refresh guide programme data only. Channel playlists are fetched
-            // on startup or when the user selects Fetch Playlists Now.
-            await dataStore.refreshIfStale()
         }
     }
 }
