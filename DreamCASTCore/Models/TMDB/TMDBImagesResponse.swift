@@ -13,7 +13,7 @@
 
 import Foundation
 
-struct TMDBImagesResponse: Decodable, Sendable {
+nonisolated struct TMDBImagesResponse: Decodable, Sendable {
     let logos: [TMDBImageEntry]
 
     enum CodingKeys: String, CodingKey {
@@ -30,7 +30,7 @@ struct TMDBImagesResponse: Decodable, Sendable {
     }
 }
 
-struct TMDBImageEntry: Decodable, Sendable {
+nonisolated struct TMDBImageEntry: Decodable, Sendable {
     let filePath: String?
     let iso6391: String?
     let voteAverage: Double?
