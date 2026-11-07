@@ -47,41 +47,41 @@ struct RouteAudioPolicy: Sendable, Equatable {
 }
 
 enum PlaybackAudioSessionConfigurator {
+    @MainActor
     private static var lastActivationTimestamp: CFAbsoluteTime = 0
+    @MainActor
     private static var lastActivationModeRawValue: String = ""
-    private static let minimumReactivationInterval: CFAbsoluteTime = 0.75
+    @MainActor
+    private static var lastActivationUsedLongFormPolicy = false
+
+    /// A media-services reset or audio interruption clears our activation cache.
+    @MainActor
+    static func invalidateActivation() {
+        lastActivationTimestamp = 0
+        lastActivationModeRawValue = ""
+        lastActivationUsedLongFormPolicy = false
+    }
 
     /// Configure and activate a playback session optimized for long-form media.
     /// Uses long-form video routing on iOS and long-form audio on tvOS (video policy
     /// is unavailable on tvOS). Falls back to allowAirPlay when policy-based routing
     /// cannot be applied.
+    @MainActor
     static func activatePlaybackSession(mode: AVAudioSession.Mode, owner: String) {
         let session = AVAudioSession.sharedInstance()
-        let now = CFAbsoluteTimeGetCurrent()
 
         // Skip setCategory/setActive when already configured: re-applying setCategory on a
         // running session renegotiates HDMI and breaks bitstream passthrough mid-stream.
         let alreadyConfigured = session.category == .playback
             && session.mode == mode
-            && session.routeSharingPolicy == .longFormAudio
+            && (lastActivationUsedLongFormPolicy
+                ? session.routeSharingPolicy == .longFormAudio
+                : session.routeSharingPolicy != .longFormAudio)
             && lastActivationModeRawValue == mode.rawValue
             && lastActivationTimestamp > 0
         if alreadyConfigured {
-            Task { @MainActor in
-                AudioRouteDiagnostics.shared.start(owner: owner)
-                AudioRouteDiagnostics.shared.logCurrentRoute(owner: owner, reason: "activate_playback_session_reused")
-            }
-            return
-        }
-
-        // Multiple playback components may request activation back-to-back (NowPlaying + player).
-        // Skip duplicate re-activation bursts to reduce route churn and log noise.
-        if now - lastActivationTimestamp < minimumReactivationInterval &&
-            lastActivationModeRawValue == mode.rawValue {
-            Task { @MainActor in
-                AudioRouteDiagnostics.shared.start(owner: owner)
-                AudioRouteDiagnostics.shared.logCurrentRoute(owner: owner, reason: "activate_playback_session_reused")
-            }
+            AudioRouteDiagnostics.shared.start(owner: owner)
+            AudioRouteDiagnostics.shared.logCurrentRoute(owner: owner, reason: "activate_playback_session_reused")
             return
         }
 
@@ -97,41 +97,52 @@ enum PlaybackAudioSessionConfigurator {
         appHangSectionEnter("audio_session_activate", owner: owner)
         defer { appHangSectionExit("audio_session_activate") }
 
+        var categoryConfigured = false
         do {
             try session.setCategory(.playback, mode: mode, policy: preferredPolicy, options: [])
             usingLongFormPolicy = true
+            categoryConfigured = true
         } catch {
             do {
                 try session.setCategory(.playback, mode: mode, options: [.allowAirPlay])
+                categoryConfigured = true
                 playerDebugLog("🎵 \(owner): Audio category fallback set (.playback, mode: \(mode.rawValue), allowAirPlay)")
             } catch {
                 playerDebugLog("🎵 \(owner): Could not set audio category: \(error.localizedDescription)")
             }
         }
 
-        do {
-            try session.setActive(true)
-            lastActivationTimestamp = now
-            lastActivationModeRawValue = mode.rawValue
+        // Do not activate an unknown category, then incorrectly cache it as ready.
+        guard categoryConfigured else { return }
+
+        // Set preferences before activation. Changing the rate after HDMI starts
+        // can force a new hardware format and interrupt an active bitstream.
+        if !isAirPlayRouteActive() {
             do {
                 try session.setPreferredSampleRate(48_000)
             } catch {
                 playerDebugLog("🎵 \(owner): Could not set preferred sample rate: \(error.localizedDescription)")
             }
-            if #available(tvOS 15.0, iOS 15.0, *) {
-                do {
-                    try session.setSupportsMultichannelContent(true)
-                } catch {
-                    playerDebugLog("🎵 \(owner): Could not enable multichannel content support: \(error.localizedDescription)")
-                }
+        }
+        if #available(tvOS 15.0, iOS 15.0, *) {
+            do {
+                try session.setSupportsMultichannelContent(true)
+            } catch {
+                playerDebugLog("🎵 \(owner): Could not enable multichannel content support: \(error.localizedDescription)")
             }
+        }
+
+        do {
+            try session.setActive(true)
+            lastActivationTimestamp = CFAbsoluteTimeGetCurrent()
+            lastActivationModeRawValue = mode.rawValue
+            lastActivationUsedLongFormPolicy = usingLongFormPolicy
             let routeType = session.currentRoute.outputs.first?.portType.rawValue ?? "unknown"
             playerDebugLog("🎵 \(owner): Audio session active (route: \(routeType), policy: \(usingLongFormPolicy ? preferredPolicyName : "default"))")
-            Task { @MainActor in
-                AudioRouteDiagnostics.shared.start(owner: owner)
-                AudioRouteDiagnostics.shared.logCurrentRoute(owner: owner, reason: "activate_playback_session")
-            }
+            AudioRouteDiagnostics.shared.start(owner: owner)
+            AudioRouteDiagnostics.shared.logCurrentRoute(owner: owner, reason: "activate_playback_session")
         } catch {
+            invalidateActivation()
             playerDebugLog("🎵 \(owner): Failed to activate audio session: \(error.localizedDescription)")
         }
     }
