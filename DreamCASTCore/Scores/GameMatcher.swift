@@ -13,7 +13,7 @@
 
 import Foundation
 
-enum GameMatcher {
+nonisolated enum GameMatcher {
     /// How far a game's start may sit outside the programme's slot.
     static let slack: TimeInterval = 4 * 3600
 
