@@ -213,9 +213,6 @@ struct EPGGuide: UIViewRepresentable {
                 // where it was, which reads as a jump hours to the right.
                 context.coordinator.resetHorizontalScroll()
             }
-        } else {
-            // Likely just `now` advanced — move the now-line without a reload.
-            layout.invalidateLayout()
         }
         uiView.setClock(now)
         if let request = focusRequest, request != context.coordinator.handledFocusRequest {
@@ -231,7 +228,7 @@ struct EPGGuide: UIViewRepresentable {
         weak var collectionView: UICollectionView?
         private(set) var sections: [UnifiedChannel] = []
         private(set) var programs: [[UnifiedProgram]] = []
-        private var lastSignature: Int = 0
+        private var lastSignature: Int?
         private var currentSection = 0
         /// Only the row holding tvOS focus may animate its channel name.
         private var highlightedSection: Int?
@@ -264,6 +261,36 @@ struct EPGGuide: UIViewRepresentable {
         /// Pushes data into the layout. Returns true if channels/programs changed.
         @discardableResult
         func apply(_ p: EPGGuide, to layout: EPGLayout) -> Bool {
+            // Focus changes refresh the SwiftUI info bar, but do not alter the
+            // channel schedule. Avoid sorting every programme and rebuilding
+            // the entire collection layout for each remote-button press.
+            var sig = Hasher()
+            sig.combine(p.channels.count)
+            sig.combine(p.timelineStart)
+            sig.combine(p.totalMinutes)
+            for channel in p.channels {
+                sig.combine(channel.id)
+                sig.combine(channel.name)
+                sig.combine(channel.channelNumber)
+                sig.combine(channel.logoURL)
+                let entries = p.programsByChannel[channel.id] ?? []
+                sig.combine(entries.count)
+                if let first = entries.first {
+                    sig.combine(first.id)
+                    sig.combine(first.startTime)
+                }
+                if let last = entries.last {
+                    sig.combine(last.id)
+                    sig.combine(last.endTime)
+                }
+            }
+            let signature = sig.finalize()
+            guard signature != lastSignature else {
+                layout.updateNow(p.now)
+                return false
+            }
+            lastSignature = signature
+
             let ppm = EPGTheme.pointsPerMinute
             let total = Double(p.totalMinutes)
             var rows: [[EPGLayout.Span]] = []
@@ -295,22 +322,6 @@ struct EPGGuide: UIViewRepresentable {
                 chans.append(channel)
             }
 
-            // Signature to detect data changes. Includes logoURL so a late
-            // channel-logo patch triggers a reload, and per-channel programme
-            // counts so EPG arriving AFTER the channels (DreamCAST loads them
-            // separately) reloads the grid and the rows populate.
-            var sig = Hasher()
-            sig.combine(p.channels.count)
-            for c in p.channels {
-                sig.combine(c.id)
-                sig.combine(c.logoURL)
-                sig.combine(p.programsByChannel[c.id]?.count ?? 0)
-            }
-            sig.combine(p.timelineStart)
-            let signature = sig.finalize()
-            let changed = signature != lastSignature
-            lastSignature = signature
-
             sections = chans
             programs = progs
             lastTimelineStart = p.timelineStart
@@ -319,7 +330,7 @@ struct EPGGuide: UIViewRepresentable {
                              totalMinutes: p.totalMinutes,
                              timelineStart: p.timelineStart,
                              now: p.now)
-            return changed
+            return true
         }
 
         func numberOfSections(in collectionView: UICollectionView) -> Int { programs.count }
@@ -403,7 +414,9 @@ struct EPGGuide: UIViewRepresentable {
                     }
                     targetY = max(targetY, -cv.contentInset.top)
                     if abs(targetY - cv.contentOffset.y) > 0.5 || abs(lockedX - cv.contentOffset.x) > 0.5 {
-                        cv.setContentOffset(CGPoint(x: lockedX, y: targetY), animated: true)
+                        // Don't queue a scroll animation for every Up/Down
+                        // press. Rapid remote input should follow focus at once.
+                        cv.setContentOffset(CGPoint(x: lockedX, y: targetY), animated: false)
                     }
                 }
             }
@@ -1349,6 +1362,13 @@ final class EPGLayout: UICollectionViewLayout {
         self.totalMinutes = totalMinutes
         self.timelineStart = timelineStart
         self.now = now
+        invalidateLayout()
+    }
+
+    /// The now-line updates without rebuilding the channel/programme spans.
+    func updateNow(_ date: Date) {
+        guard now != date else { return }
+        now = date
         invalidateLayout()
     }
 
