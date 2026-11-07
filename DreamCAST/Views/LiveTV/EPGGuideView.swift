@@ -693,11 +693,15 @@ final class EPGContainerView: UIView {
         self.collectionView = cv
         addSubview(cv)
         addSubview(categoryBar)
-        clockLabel.font = .monospacedDigitSystemFont(ofSize: 26, weight: .semibold)
+        clockLabel.font = .monospacedDigitSystemFont(ofSize: 23, weight: .semibold)
         clockLabel.textColor = UIColor.white.withAlphaComponent(0.85)
-        clockLabel.textAlignment = .right
+        clockLabel.textAlignment = .center
+        clockLabel.backgroundColor = UIColor(EPGTheme.background)
+        clockLabel.layer.cornerRadius = 8
+        clockLabel.clipsToBounds = true
         clockLabel.isUserInteractionEnabled = false
         addSubview(clockLabel)
+        bringSubviewToFront(clockLabel)
         setClock(Date())
         // The guide's own tick is every 30s; the clock wants the minute to turn
         // on time, so it keeps its own.
@@ -895,11 +899,13 @@ final class EPGContainerView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        let clockWidth: CGFloat = 170
+        // Keep a distinct clock zone at the right edge of the group header.
+        let clockWidth: CGFloat = 218
+        let groupClockGap: CGFloat = 20
         categoryBar.frame = CGRect(
-            x: 0,
+            x: EPGTheme.pageMargin,
             y: EPGTheme.infoBarHeight,
-            width: max(bounds.width - clockWidth, 0),
+            width: max(bounds.width - clockWidth - EPGTheme.pageMargin - groupClockGap, 0),
             height: EPGTheme.categoryBarHeight)
         clockLabel.frame = CGRect(
             x: bounds.width - clockWidth,
@@ -1008,8 +1014,9 @@ final class GuideCategoryBarView: UIView {
 
         let view = UICollectionView(frame: .zero, collectionViewLayout: layout)
         view.backgroundColor = .clear
-        // The focused pill grows past the bar.
-        view.clipsToBounds = false
+        // Constrain scrollable groups to the header. Otherwise focused pills
+        // paint over the clock and beyond the left edge of the screen.
+        view.clipsToBounds = true
         view.contentInsetAdjustmentBehavior = .never
         view.showsHorizontalScrollIndicator = false
         view.showsVerticalScrollIndicator = false
