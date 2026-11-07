@@ -16,7 +16,7 @@ enum StartupTimer {
     /// Launch reference: when the process started, not first touch. Stored
     /// properties such as the SwiftData container initialise before
     /// `DreamCASTApp.init`'s body, so first touch would bill them to +0 ms.
-    nonisolated(unsafe) private static let launchUptime = processStartUptime()
+    nonisolated private static let launchUptime = processStartUptime()
 
     private static let log = Logger(subsystem: "com.bain.DreamCAST", category: "Startup")
 
