@@ -1,0 +1,137 @@
+// SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+// Copyright (C) 2025-2026 Bain Gurley
+
+import Foundation
+
+/// Only the public browser code-login flow is used. No Android app keys are copied.
+nonisolated enum MovieBoxWebCodeError: LocalizedError, Sendable {
+    case pageUnavailable
+    case invalidCodePage
+    case invalidCheckResponse
+    case redirectedOutsideProvider
+
+    var errorDescription: String? {
+        switch self {
+        case .pageUnavailable:
+            "MovieBox Pro did not return a usable login page. Please try again later."
+        case .invalidCodePage:
+            "MovieBox Pro did not issue a TV code. The website may have changed."
+        case .invalidCheckResponse:
+            "MovieBox Pro returned an unknown code status. Please try a new code."
+        case .redirectedOutsideProvider:
+            "MovieBox Pro redirected login to another site. Sign-in stopped."
+        }
+    }
+}
+
+/// Parsing is kept apart from networking so the web contract can be tested offline.
+nonisolated enum MovieBoxWebCodeParser {
+    private static let codePattern = #"<[^>]*\bid\s*=\s*["']qrcode["'][^>]*>\s*([0-9]{6,10})\s*<"#
+
+    static func challenge(from html: String, now: Date = Date()) throws -> MovieBoxDeviceCodeChallenge {
+        let expression = try NSRegularExpression(pattern: codePattern, options: [.caseInsensitive])
+        let range = NSRange(html.startIndex..<html.endIndex, in: html)
+        guard let match = expression.firstMatch(in: html, range: range),
+              let codeRange = Range(match.range(at: 1), in: html),
+              let challenge = MovieBoxDeviceCodeChallenge(
+                  code: String(html[codeRange]),
+                  expiresAt: now.addingTimeInterval(120),
+                  pollInterval: 1.5,
+                  now: now
+              ) else {
+            throw MovieBoxWebCodeError.invalidCodePage
+        }
+        return challenge
+    }
+
+    static func status(from data: Data) throws -> MovieBoxDeviceCodeStatus {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let rawCode = json["code"] else {
+            throw MovieBoxWebCodeError.invalidCheckResponse
+        }
+        let number: Int?
+        if let numericCode = rawCode as? NSNumber {
+            number = numericCode.intValue
+        } else if let stringCode = rawCode as? String {
+            number = Int(stringCode)
+        } else {
+            number = nil
+        }
+        guard let number else { throw MovieBoxWebCodeError.invalidCheckResponse }
+        return number == 1 ? .approved : .awaitingPhone
+    }
+}
+
+/// Holds cookies only in memory. Approval does not yet grant catalog access.
+actor MovieBoxWebCodeService: MovieBoxDeviceCodeService {
+    private let session: URLSession
+    private let baseURL = URL(string: "https://www.movieboxpro.app")!
+
+    init(session: URLSession? = nil) {
+        if let session {
+            self.session = session
+            return
+        }
+        let settings = URLSessionConfiguration.ephemeral
+        settings.httpShouldSetCookies = true
+        settings.httpCookieAcceptPolicy = .always
+        settings.requestCachePolicy = .reloadIgnoringLocalCacheData
+
+        // This is a fresh browser-style ID, not another device's identity.
+        // The site's device_bind.js sets these cookies for new visitors.
+        let clientID = "mbp_" + UUID().uuidString.lowercased()
+        if let cookies = settings.httpCookieStorage {
+            for name in ["ci", "cl"] {
+                if let cookie = HTTPCookie(properties: [
+                    .domain: "www.movieboxpro.app",
+                    .path: "/",
+                    .name: name,
+                    .value: clientID,
+                    .secure: "TRUE"
+                ]) {
+                    cookies.setCookie(cookie)
+                }
+            }
+        }
+        self.session = URLSession(configuration: settings)
+    }
+
+    func requestCode() async throws -> MovieBoxDeviceCodeChallenge {
+        var request = URLRequest(url: baseURL.appendingPathComponent("index/login/code_login"))
+        request.httpMethod = "GET"
+        request.timeoutInterval = 15
+        request.setValue("text/html", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await session.data(for: request)
+        try checkResponse(response)
+        guard let html = String(data: data, encoding: .utf8) else {
+            throw MovieBoxWebCodeError.invalidCodePage
+        }
+        return try MovieBoxWebCodeParser.challenge(from: html)
+    }
+
+    func checkStatus(for challenge: MovieBoxDeviceCodeChallenge) async throws -> MovieBoxDeviceCodeStatus {
+        guard !challenge.isExpired() else { return .expired }
+        var request = URLRequest(url: baseURL.appendingPathComponent("index/login/captcha_query"))
+        request.httpMethod = "POST"
+        request.timeoutInterval = 15
+        request.setValue("application/x-www-form-urlencoded; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+        request.setValue("XMLHttpRequest", forHTTPHeaderField: "X-Requested-With")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpBody = Data("qr_code=\(challenge.code)".utf8)
+
+        let (data, response) = try await session.data(for: request)
+        try checkResponse(response)
+        return try MovieBoxWebCodeParser.status(from: data)
+    }
+
+    private func checkResponse(_ response: URLResponse) throws {
+        guard let url = response.url, url.scheme == "https",
+              ["movieboxpro.app", "www.movieboxpro.app"].contains(url.host ?? "") else {
+            throw MovieBoxWebCodeError.redirectedOutsideProvider
+        }
+        guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+            throw MovieBoxWebCodeError.pageUnavailable
+        }
+    }
+}
