@@ -11,6 +11,7 @@ final class MovieBoxWebShowDetailParserTests: XCTestCase {
           <img src="https://images.example.test/show-cover.jpg" class="cover" />
           <p class="movie_title"><span class="name">Sample &amp; Show</span></p>
           <span class="year">2026</span>
+          <meta itemprop="datePublished" content="2026-09-03" />
           <p style="font-size:18px;margin-top:30px;">A short &amp; safe summary.</p>
         </div>
         <a play="mbpplay://example?private=NEVER_STORE_THIS"></a>
@@ -34,6 +35,7 @@ final class MovieBoxWebShowDetailParserTests: XCTestCase {
         XCTAssertEqual(detail.id, "12345")
         XCTAssertEqual(detail.title, "Sample & Show")
         XCTAssertEqual(detail.year, "2026")
+        XCTAssertEqual(detail.firstAirDate, "September 3, 2026")
         XCTAssertEqual(detail.posterURL?.absoluteString, "https://images.example.test/show-cover.jpg")
         XCTAssertEqual(detail.synopsis, "A short & safe summary.")
         XCTAssertEqual(detail.seasons, [1, 2])
