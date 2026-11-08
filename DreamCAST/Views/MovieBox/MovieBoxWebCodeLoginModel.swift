@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 // Copyright (C) 2025-2026 Bain Gurley
 
+import Combine
 import SwiftUI
 
 /// Owns one short-lived login attempt. The code never goes to disk or logs.
