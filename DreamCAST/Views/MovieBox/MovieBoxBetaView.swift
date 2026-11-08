@@ -31,40 +31,12 @@ struct MovieBoxBetaView: View {
             case .movies: "Movie listings will appear after a supported account connection is ready."
             case .series: "TV shows and episodes will appear after a supported account connection is ready."
             case .search: "Search will be available after we verify the provider's request format."
-            case .account: "Choose how you want to connect your MovieBox Pro account."
-            }
-        }
-    }
-
-    private enum SignInMethod: String, CaseIterable, Identifiable {
-        case code = "Code Login"
-        case google = "Google"
-        case email = "Email (unverified)"
-
-        var id: String { rawValue }
-
-        var symbol: String {
-            switch self {
-            case .code: "number.square"
-            case .google: "person.crop.circle"
-            case .email: "envelope"
-            }
-        }
-
-        var explanation: String {
-            switch self {
-            case .code:
-                "Enter the temporary TV code through MovieBox Pro on your iPhone."
-            case .google:
-                "Google sign-in needs a verified account redirect. No login window is opened yet."
-            case .email:
-                "The supplied iPhone app only shows Code Login and Google. Email access is not verified."
+            case .account: "Connect your MovieBox Pro account using a TV code."
             }
         }
     }
 
     @State private var page: Page = .overview
-    @State private var signInMethod: SignInMethod = .code
 
     var body: some View {
         ZStack {
@@ -122,53 +94,38 @@ struct MovieBoxBetaView: View {
 
                     if page == .account {
                         VStack(alignment: .leading, spacing: 22) {
-                            Text("Sign-in options")
+                            Label("Code Login", systemImage: "number.square")
                                 .font(.title2.bold())
+                                .foregroundStyle(.cyan)
 
-                            HStack(spacing: 22) {
-                                ForEach(SignInMethod.allCases) { method in
-                                    Button {
-                                        signInMethod = method
-                                    } label: {
-                                        Label(method.rawValue, systemImage: method.symbol)
-                                            .font(.headline)
-                                            .frame(minWidth: 190, minHeight: 55)
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .tint(signInMethod == method ? .cyan : .gray)
-                                }
-                            }
-
-                            Text(signInMethod.explanation)
+                            Text("Enter the temporary TV code through MovieBox Pro on your phone or web browser.")
                                 .font(.title3)
                                 .foregroundStyle(.secondary)
 
-                            if signInMethod == .code {
-                                VStack(alignment: .leading, spacing: 14) {
-                                    Text("Your Apple TV code")
-                                        .font(.headline)
+                            VStack(alignment: .leading, spacing: 14) {
+                                Text("Your Apple TV code")
+                                    .font(.headline)
 
-                                    HStack(spacing: 16) {
-                                        Image(systemName: "lock.shield")
-                                            .foregroundStyle(.cyan)
-                                        Text("Not issued")
-                                            .font(.title2.bold())
-                                    }
-
-                                    Text("1. Open MovieBox Pro on your iPhone.")
-                                    Text("2. Open its settings and choose Code Login.")
-                                    Text("3. Enter the code shown on your Apple TV and confirm.")
-
-                                    Text("Code requests are disabled until the provider's login API is verified.")
-                                        .font(.footnote)
-                                        .foregroundStyle(.secondary)
-                                        .padding(.top, 8)
+                                HStack(spacing: 16) {
+                                    Image(systemName: "lock.shield")
+                                        .foregroundStyle(.cyan)
+                                    Text("Not issued")
+                                        .font(.title2.bold())
                                 }
-                                .font(.body)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(26)
-                                .background(.black.opacity(0.2), in: RoundedRectangle(cornerRadius: 16))
+
+                                Text("1. Open MovieBox Pro on your phone or the web and sign in.")
+                                Text("2. Choose Code Login from its account menu or settings.")
+                                Text("3. Enter the code shown on your Apple TV and confirm.")
+
+                                Text("Code requests remain off until the secure login flow is verified.")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.top, 8)
                             }
+                            .font(.body)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(26)
+                            .background(.black.opacity(0.2), in: RoundedRectangle(cornerRadius: 16))
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(32)
