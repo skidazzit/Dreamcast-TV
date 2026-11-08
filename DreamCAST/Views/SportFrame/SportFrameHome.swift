@@ -63,6 +63,18 @@ struct SportFrameHome: View {
         }
     }
 
+    private var followingDayMatches: [SportEvent] {
+        guard dayOffset == 0 else { return [] }
+        return filteredSports.flatMap { sport in
+            let chosen = leagueSelections[sport]
+            return fixtures.nextDayEvents.filter { event in
+                fixtures.nextDaySports[event.idEvent] == sport &&
+                (chosen.map { $0.contains(event.league) } ?? true) &&
+                (matchLeagueFilter == allLeagueFilter || event.league == matchLeagueFilter)
+            }
+        }
+    }
+
     private func isLive(_ event: SportEvent) -> Bool {
         event.isLive
     }
@@ -203,12 +215,14 @@ struct SportFrameHome: View {
                 ProgressView("Loading sports…")
             } else if let error = fixtures.error {
                 Text(error).foregroundStyle(.orange)
-            } else if filteredMatches.isEmpty {
+            } else if filteredMatches.isEmpty && followingDayMatches.isEmpty {
                 emptyPanel("No matches for these filters and date. Try All Sports or All Leagues.")
             } else {
                 matchShelf("Happening now", events: filteredMatches.filter { isLive($0) })
-                matchShelf("Coming up", events: filteredMatches.filter { !isLive($0) && ($0.isUpcoming || $0.startDate == nil) })
-                if !filteredMatches.contains(where: { isLive($0) || $0.isUpcoming || $0.startDate == nil }) {
+                let todayUpcoming = filteredMatches.filter { !isLive($0) && ($0.isUpcoming || $0.startDate == nil) }
+                matchShelf(todayUpcoming.isEmpty && !followingDayMatches.isEmpty ? "Coming up · Tomorrow" : "Coming up",
+                           events: todayUpcoming.isEmpty ? followingDayMatches : todayUpcoming)
+                if !filteredMatches.contains(where: { isLive($0) || $0.isUpcoming || $0.startDate == nil }) && followingDayMatches.isEmpty {
                     matchShelf("Recent results", events: filteredMatches.filter { $0.intHomeScore != nil || $0.intAwayScore != nil })
                 }
                 leagueSummarySection
