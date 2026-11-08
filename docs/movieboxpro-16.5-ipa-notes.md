@@ -63,3 +63,16 @@ Plex and AetherEngine are untouched.
 Do not use client-identity spoofing, extracted app secrets, hidden CDN URL
 reconstruction, entitlement spoofing, DRM workarounds, or geo-block bypasses.
 Only add a live adapter after a supported account and API flow is verified.
+
+## Observed iPhone code-login screen (user-provided screenshots)
+
+The iOS app's first sign-in screen offers **Login with Google** and
+**Login with Code**. The second option displays a temporary code and tells the
+user to enter it through the iPhone app's **Code Login** menu. This is a
+device-pairing flow, not evidence of an email/password or QR scanner flow.
+
+DreamCAST's beta page now shows Code Login first, Google second, and labels
+email access as unverified. The pairing contract describes a code, expiry,
+poll interval and status. It does **not** generate a code, contact the
+service or sign in. The IPA operation names still do not prove request methods,
+parameters, response formats or permission for third-party clients.
