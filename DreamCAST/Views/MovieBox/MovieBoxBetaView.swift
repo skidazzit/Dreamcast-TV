@@ -39,8 +39,10 @@ struct MovieBoxBetaView: View {
     @StateObject private var codeLogin = MovieBoxWebCodeLoginModel()
     @StateObject private var webMovies = MovieBoxWebMoviesModel()
     @StateObject private var webShows = MovieBoxWebShowsModel()
+    @StateObject private var webShowDetail = MovieBoxWebShowDetailModel()
     @FocusState private var codeButtonFocused: Bool
     @State private var selectedCatalogItem: CatalogSelection?
+    @State private var activeShow: MovieBoxWebShowCard?
 
     private struct CatalogSelection: Identifiable {
         let id: String
@@ -53,6 +55,13 @@ struct MovieBoxBetaView: View {
         Array(
             repeating: GridItem(.fixed(MediaRowMetrics.poster.art.width), spacing: MediaRowMetrics.tileGap),
             count: MediaRowMetrics.posterFullCount
+        )
+    }
+
+    private var episodeColumns: [GridItem] {
+        Array(
+            repeating: GridItem(.fixed(MediaRowMetrics.gridWidth(columns: 4)), spacing: MediaRowMetrics.tileGap),
+            count: 4
         )
     }
 
@@ -94,7 +103,11 @@ struct MovieBoxBetaView: View {
                     if page == .movies {
                         movieCatalog
                     } else if page == .series {
-                        showCatalog
+                        if let activeShow {
+                            showDetailView(for: activeShow)
+                        } else {
+                            showCatalog
+                        }
                     } else if page != .account {
                         VStack(alignment: .leading, spacing: 12) {
                             Text(page.rawValue)
@@ -225,6 +238,7 @@ struct MovieBoxBetaView: View {
                 .padding(.horizontal, page == .movies || page == .series ? MediaRowMetrics.rowLeading : 90)
                 .padding(.vertical, 28)
             }
+            .id("\(page.rawValue)-\(activeShow?.id ?? "grid")")
         }
         .onChange(of: page) { newPage in
             if newPage != .account { codeLogin.cancel() }
@@ -232,12 +246,17 @@ struct MovieBoxBetaView: View {
             if newPage == .movies { webMovies.load() }
             else { webMovies.cancel() }
             if newPage == .series { webShows.load() }
-            else { webShows.cancel() }
+            else {
+                webShows.cancel()
+                webShowDetail.cancel()
+                activeShow = nil
+            }
         }
         .onDisappear {
             codeLogin.cancel()
             webMovies.cancel()
             webShows.cancel()
+            webShowDetail.cancel()
         }
         .alert(item: $selectedCatalogItem) { item in
             Alert(
@@ -337,11 +356,8 @@ struct MovieBoxBetaView: View {
                 ) {
                     ForEach(webShows.shows) { show in
                         Button {
-                            selectedCatalogItem = CatalogSelection(
-                                id: "show-\(show.id)",
-                                title: show.title,
-                                message: "TV show details, episodes, and playback are not connected yet."
-                            )
+                            activeShow = show
+                            webShowDetail.load(showID: show.id)
                         } label: {
                             catalogPoster(title: show.title, posterURL: show.posterURL, symbol: "tv")
                         }
@@ -350,7 +366,7 @@ struct MovieBoxBetaView: View {
                 }
             }
 
-            Text("Beta: Listings only. Episodes and playback are not verified yet.")
+            Text("Select a show to browse its seasons and episodes. Playback is not enabled.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -358,6 +374,133 @@ struct MovieBoxBetaView: View {
         .padding(.vertical, 24)
         .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22))
         .focusSection()
+    }
+
+    private func showDetailView(for show: MovieBoxWebShowCard) -> some View {
+        VStack(alignment: .leading, spacing: 28) {
+            HStack(spacing: 20) {
+                Button {
+                    webShowDetail.cancel()
+                    activeShow = nil
+                } label: {
+                    Label("Back to TV Shows", systemImage: "chevron.left")
+                }
+                .buttonStyle(.bordered)
+
+                Spacer()
+
+                Button("Refresh") { webShowDetail.load(showID: show.id) }
+                    .buttonStyle(.bordered)
+            }
+
+            if webShowDetail.phase == .loading {
+                ProgressView("Loading show details…")
+            } else if webShowDetail.phase == .failed {
+                Text(webShowDetail.errorMessage ?? "Could not load this show.")
+                    .foregroundStyle(.orange)
+            }
+
+            if let detail = webShowDetail.detail {
+                HStack(alignment: .top, spacing: 36) {
+                    AsyncImage(url: detail.posterURL ?? show.posterURL) { phase in
+                        if let image = phase.image {
+                            image.resizable().scaledToFill()
+                        } else {
+                            Color.gray.opacity(0.18)
+                                .overlay(Image(systemName: "tv").font(.system(size: 52)))
+                        }
+                    }
+                    .frame(width: MediaRowMetrics.poster.art.width, height: MediaRowMetrics.poster.art.height)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                    VStack(alignment: .leading, spacing: 18) {
+                        Text(detail.title)
+                            .font(.largeTitle.bold())
+                        if let year = detail.year {
+                            Text(year)
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let synopsis = detail.synopsis {
+                            Text(synopsis)
+                                .font(.body)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Text("Read-only show details. No playback is available in this beta.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                VStack(alignment: .leading, spacing: 20) {
+                    Text("Seasons")
+                        .font(.title2.bold())
+
+                    HStack(spacing: 16) {
+                        ForEach(detail.seasons, id: \.self) { season in
+                            Button("Season \(season)") {
+                                webShowDetail.selectSeason(season)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(webShowDetail.selectedSeason == season ? .cyan : .gray)
+                        }
+                    }
+
+                    let episodes = detail.episodes(in: webShowDetail.selectedSeason)
+                    Text("\(episodes.count) episodes")
+                        .font(.headline)
+                        .foregroundStyle(.cyan)
+
+                    LazyVGrid(columns: episodeColumns, alignment: .leading, spacing: 32) {
+                        ForEach(episodes) { episode in
+                            Button {
+                                let runtime = episode.runtimeMinutes.map { " · \($0) minutes" } ?? ""
+                                selectedCatalogItem = CatalogSelection(
+                                    id: "episode-\(detail.id)-\(episode.id)",
+                                    title: episode.title,
+                                    message: "Season \(episode.season), Episode \(episode.number)\(runtime). Playback is not enabled yet."
+                                )
+                            } label: {
+                                episodeCard(episode)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 24)
+        .focusSection()
+    }
+
+    private func episodeCard(_ episode: MovieBoxWebEpisode) -> some View {
+        let width = MediaRowMetrics.gridWidth(columns: 4)
+        return VStack(alignment: .leading, spacing: 10) {
+            AsyncImage(url: episode.thumbnailURL) { phase in
+                if let image = phase.image {
+                    image.resizable().scaledToFill()
+                } else {
+                    Color.gray.opacity(0.18)
+                        .overlay(Image(systemName: "tv").font(.system(size: 46)))
+                }
+            }
+            .frame(width: width, height: width * 9 / 16)
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+
+            Text("S\(episode.season)E\(episode.number) · \(episode.title)")
+                .font(.headline)
+                .lineLimit(2)
+                .frame(width: width, alignment: .leading)
+            if let runtime = episode.runtimeMinutes {
+                Text("\(runtime) minutes")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
     }
 
     private func catalogPoster(title: String, posterURL: URL?, symbol: String) -> some View {
