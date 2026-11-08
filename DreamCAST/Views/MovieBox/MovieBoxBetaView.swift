@@ -102,7 +102,8 @@ struct MovieBoxBetaView: View {
                                 Spacer(minLength: 20)
 
                                 Button(codeLogin.isBusy ? "Cancel" :
-                                       codeLogin.phase == .expired ? "Get new code" : "Get TV code") {
+                                       (codeLogin.phase == .expired || codeLogin.phase == .approved)
+                                        ? "Get new code" : "Get TV code") {
                                     if codeLogin.isBusy {
                                         codeLogin.cancel()
                                     } else {
@@ -131,13 +132,15 @@ struct MovieBoxBetaView: View {
                                     .font(.headline)
 
                                 HStack(spacing: 16) {
-                                    Image(systemName: "lock.shield")
-                                        .foregroundStyle(.cyan)
+                                    Image(systemName: codeLogin.phase == .approved
+                                          ? "checkmark.shield.fill" : "lock.shield")
+                                        .foregroundStyle(codeLogin.phase == .approved ? Color.green : Color.cyan)
                                     if let code = codeLogin.code {
                                         Text(code)
                                             .font(.system(size: 48, weight: .bold, design: .monospaced))
                                     } else {
-                                        Text(codeLogin.phase == .expired ? "Expired" : "Not issued")
+                                        Text(codeLogin.phase == .approved ? "Approved" :
+                                             codeLogin.phase == .expired ? "Expired" : "Not issued")
                                             .font(.title2.bold())
                                     }
                                 }
