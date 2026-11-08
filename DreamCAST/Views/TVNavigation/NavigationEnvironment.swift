@@ -18,7 +18,6 @@ enum SidebarTab: Hashable {
     case account
     case search
     case home
-    case sportsHub
     case discover
     case watchlist
     case favorites
