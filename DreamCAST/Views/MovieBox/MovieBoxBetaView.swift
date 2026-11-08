@@ -27,7 +27,7 @@ struct MovieBoxBetaView: View {
         var detail: String {
             switch self {
             case .overview: "MovieBox Pro is not connected to DreamCAST yet."
-            case .movies: "Movie listings will appear after a supported account connection is ready."
+            case .movies: "Read-only listings from your saved MovieBox web session."
             case .series: "TV shows and episodes will appear after a supported account connection is ready."
             case .search: "Search will be available after we verify the provider's request format."
             case .account: "Connect your MovieBox Pro account using a TV code."
@@ -37,7 +37,9 @@ struct MovieBoxBetaView: View {
 
     @State private var page: Page = .overview
     @StateObject private var codeLogin = MovieBoxWebCodeLoginModel()
+    @StateObject private var webMovies = MovieBoxWebMoviesModel()
     @FocusState private var codeButtonFocused: Bool
+    @State private var selectedMovie: MovieBoxWebMovieCard?
 
     var body: some View {
         ZStack {
@@ -74,7 +76,9 @@ struct MovieBoxBetaView: View {
                         }
                     }
 
-                    if page != .account {
+                    if page == .movies {
+                        movieCatalog
+                    } else if page != .account {
                         VStack(alignment: .leading, spacing: 12) {
                             Text(page.rawValue)
                                 .font(.title.bold())
@@ -186,7 +190,7 @@ struct MovieBoxBetaView: View {
                             Text("On your phone: MovieBox Pro → Code Login → Enter this code → Confirm.")
                                 .font(.body)
 
-                            Text("Beta: Approval does not yet enable the MovieBox catalog or playback.")
+                            Text("Beta: Movie listings are read-only. Playback is not enabled.")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
@@ -208,7 +212,89 @@ struct MovieBoxBetaView: View {
         .onChange(of: page) { newPage in
             if newPage != .account { codeLogin.cancel() }
             else { codeButtonFocused = true }
+            if newPage == .movies { webMovies.load() }
+            else { webMovies.cancel() }
         }
-        .onDisappear { codeLogin.cancel() }
+        .onDisappear {
+            codeLogin.cancel()
+            webMovies.cancel()
+        }
+        .alert(item: $selectedMovie) { movie in
+            Alert(
+                title: Text(movie.title),
+                message: Text("Movie details and playback are not connected yet."),
+                dismissButton: .default(Text("OK"))
+            )
+        }
+    }
+
+    private var movieCatalog: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            HStack(spacing: 24) {
+                Text("Movies")
+                    .font(.title.bold())
+                Spacer()
+                Button("Refresh") { webMovies.load() }
+                    .buttonStyle(.bordered)
+            }
+
+            Text("Read-only movie listings from your MovieBox Pro web session.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+
+            if webMovies.phase == .loading {
+                ProgressView("Loading movies…")
+            } else if webMovies.phase == .failed {
+                Text(webMovies.errorMessage ?? "Could not load movies.")
+                    .foregroundStyle(.orange)
+            } else if webMovies.phase == .loaded {
+                Text("\(webMovies.movies.count) movies found")
+                    .font(.headline)
+                    .foregroundStyle(.cyan)
+            }
+
+            if !webMovies.movies.isEmpty {
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 24), count: 4),
+                    spacing: 28
+                ) {
+                    ForEach(webMovies.movies) { movie in
+                        Button { selectedMovie = movie } label: {
+                            VStack(alignment: .leading, spacing: 10) {
+                                AsyncImage(url: movie.posterURL) { phase in
+                                    if let image = phase.image {
+                                        image.resizable().scaledToFill()
+                                    } else {
+                                        Color.gray.opacity(0.18)
+                                            .overlay(Image(systemName: "film").font(.system(size: 52)))
+                                    }
+                                }
+                                .frame(height: 275)
+                                .frame(maxWidth: .infinity)
+                                .clipped()
+                                .background(.white.opacity(0.08))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                                Text(movie.title)
+                                    .font(.headline)
+                                    .lineLimit(2)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .padding(12)
+                            .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 18))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            Text("Beta: Listings only. Playback and account rights are not verified yet.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(24)
+        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22))
+        .focusSection()
     }
 }
