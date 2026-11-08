@@ -37,15 +37,15 @@ struct MovieBoxBetaView: View {
     }
 
     private enum SignInMethod: String, CaseIterable, Identifiable {
-        case qrCode = "QR Code"
+        case code = "Code Login"
         case google = "Google"
-        case email = "Email"
+        case email = "Email (unverified)"
 
         var id: String { rawValue }
 
         var symbol: String {
             switch self {
-            case .qrCode: "qrcode"
+            case .code: "number.square"
             case .google: "person.crop.circle"
             case .email: "envelope"
             }
@@ -53,18 +53,18 @@ struct MovieBoxBetaView: View {
 
         var explanation: String {
             switch self {
-            case .qrCode:
-                "QR pairing will use a verified sign-in code from MovieBox Pro. No code is issued yet."
+            case .code:
+                "Enter the temporary TV code through MovieBox Pro on your iPhone."
             case .google:
                 "Google sign-in needs a verified account redirect. No login window is opened yet."
             case .email:
-                "Email sign-in needs a secure provider flow. DreamCAST will not ask for your password here."
+                "The supplied iPhone app only shows Code Login and Google. Email access is not verified."
             }
         }
     }
 
     @State private var page: Page = .overview
-    @State private var signInMethod: SignInMethod?
+    @State private var signInMethod: SignInMethod = .code
 
     var body: some View {
         ZStack {
@@ -139,9 +139,36 @@ struct MovieBoxBetaView: View {
                                 }
                             }
 
-                            Text(signInMethod?.explanation ?? "Pick a method to see how account sign-in will work.")
+                            Text(signInMethod.explanation)
                                 .font(.title3)
                                 .foregroundStyle(.secondary)
+
+                            if signInMethod == .code {
+                                VStack(alignment: .leading, spacing: 14) {
+                                    Text("Your Apple TV code")
+                                        .font(.headline)
+
+                                    HStack(spacing: 16) {
+                                        Image(systemName: "lock.shield")
+                                            .foregroundStyle(.cyan)
+                                        Text("Not issued")
+                                            .font(.title2.bold())
+                                    }
+
+                                    Text("1. Open MovieBox Pro on your iPhone.")
+                                    Text("2. Open its settings and choose Code Login.")
+                                    Text("3. Enter the code shown on your Apple TV and confirm.")
+
+                                    Text("Code requests are disabled until the provider's login API is verified.")
+                                        .font(.footnote)
+                                        .foregroundStyle(.secondary)
+                                        .padding(.top, 8)
+                                }
+                                .font(.body)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(26)
+                                .background(.black.opacity(0.2), in: RoundedRectangle(cornerRadius: 16))
+                            }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(32)
