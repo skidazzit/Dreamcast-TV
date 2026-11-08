@@ -71,6 +71,8 @@ struct SportsHubBetaView: View {
     @State private var sportTab: SportTab = .watch
     @State private var channelChoices: ChannelChoices?
     @State private var matchingBroadcasts = false
+    @State private var showingSportsSetup = false
+    @AppStorage("SportsHub.selectedSports.v1") private var enabledSports = Sport.allCases.map(\.rawValue).joined(separator: "|")
 
     private struct ChannelChoices: Identifiable {
         var id = UUID()
@@ -154,9 +156,66 @@ struct SportsHubBetaView: View {
         .sheet(item: $channelChoices) { choices in
             channelPicker(choices)
         }
+        .sheet(isPresented: $showingSportsSetup) { sportsSetupSheet }
     }
 
 
+
+    private var chosenSports: [Sport] {
+        let stored = Set(enabledSports.split(separator: "|").map { String($0) })
+        return Sport.allCases.filter { stored.contains($0.rawValue) }
+    }
+
+    private func isChosen(_ item: Sport) -> Bool {
+        chosenSports.contains(item)
+    }
+
+    private func toggleSport(_ item: Sport) {
+        var stored = Set(enabledSports.split(separator: "|").map { String($0) })
+        if stored.contains(item.rawValue) {
+            stored.remove(item.rawValue)
+        } else {
+            stored.insert(item.rawValue)
+        }
+        enabledSports = Sport.allCases.filter { stored.contains($0.rawValue) }
+            .map(\.rawValue).joined(separator: "|")
+        if !isChosen(sport), let first = chosenSports.first {
+            sport = first
+        }
+    }
+
+    private var sportsSetupSheet: some View {
+        ZStack {
+            background.ignoresSafeArea()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    HStack {
+                        Text("Choose your sports").font(.largeTitle.bold())
+                        Spacer()
+                        Button("Done") { showingSportsSetup = false }
+                            .buttonStyle(.borderedProminent)
+                    }
+                    Text("Choose the sports shown in DreamCAST. You can change these at any time.")
+                        .foregroundStyle(.secondary)
+                    ForEach(Sport.allCases) { item in
+                        Button { toggleSport(item) } label: {
+                            HStack(spacing: 22) {
+                                Image(systemName: item.symbol)
+                                Text(item.rawValue).font(.headline)
+                                Spacer()
+                                Image(systemName: isChosen(item) ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(isChosen(item) ? .green : .gray)
+                            }
+                            .padding(18)
+                            .background(surface, in: RoundedRectangle(cornerRadius: 14))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(60)
+            }
+        }
+    }
 
     private var chosenDate: Date {
         Calendar.current.date(byAdding: .day, value: selectedDay - 1, to: Date()) ?? Date()
@@ -334,14 +393,14 @@ struct SportsHubBetaView: View {
                         Text("No matching channels were found in your Live TV playlists.")
                             .foregroundStyle(.secondary)
                     }
-                    channelPickerGroup("EPG matches", channels: choices.exact,
-                                       note: "These channels list the selected game in their guide.")
                     channelPickerGroup("Channel-name matches", channels: choices.nameMatches,
                                        note: "Both teams appear in the channel name. Confirm the stream before watching.")
                     channelPickerGroup("Broadcast network matches", channels: choices.possible,
-                                       note: "These channel names match the game's reported networks.")
-                    channelPickerGroup("Other sports channels", channels: choices.other,
-                                       note: "These are suggestions. Their schedules may differ.")
+                                       note: "These channels match networks reported by TheSportsDB.")
+                    channelPickerGroup("EPG matches", channels: choices.exact,
+                                       note: "The guide lists this match, but guide data may be stale.")
+                    channelPickerGroup("Alternate streams", channels: choices.other,
+                                       note: "These are duplicate playlist entries. Select the stream you prefer.")
                 }
                 .padding(60)
                 .frame(maxWidth: 1500, alignment: .leading)
@@ -400,40 +459,51 @@ struct SportsHubBetaView: View {
         }
     }
 
+    private struct EPGMatchSummary {
+        let channel: UnifiedChannel
+        let program: UnifiedProgram
+        var channelCount: Int
+    }
+
     private var liveEvents: some View {
         let now = Date()
-        let upcoming: [(UnifiedChannel, UnifiedProgram)] = liveTV.channels.compactMap { channel in
-            guard let programs = liveTV.epg[channel.id] else { return nil }
-            guard let program = programs.first(where: {
-                $0.endTime > now && $0.startTime < now.addingTimeInterval(24 * 3600)
-                    && isSportsProgram($0)
-            }) else { return nil }
-            return (channel, program)
+        var summaries: [EPGMatchSummary] = []
+        var indexByKey: [String: Int] = [:]
+        for channel in liveTV.channels {
+            guard let programs = liveTV.epg[channel.id],
+                  let program = programs.first(where: {
+                      $0.endTime > now && $0.startTime < now.addingTimeInterval(24 * 3600)
+                      && isSportsProgram($0)
+                  }) else { continue }
+            let key = normalizedChannelName(program.displayTitle) + "|" +
+                String(Int(program.startTime.timeIntervalSince1970 / 3600))
+            if let index = indexByKey[key] {
+                summaries[index].channelCount += 1
+            } else {
+                indexByKey[key] = summaries.count
+                summaries.append(EPGMatchSummary(channel: channel, program: program, channelCount: 1))
+            }
         }
         return Group {
-            if upcoming.isEmpty {
-                emptyShelf("No sports events found in the loaded TV guide.", symbol: "play.tv")
+            if summaries.isEmpty {
+                emptyShelf("No sports events found in your Live TV guide. Channel-name matching stays available.", symbol: "play.tv")
             } else {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 4), spacing: 16) {
-                    ForEach(0..<min(upcoming.count, 16), id: \.self) { index in
-                        let pair = upcoming[index]
-                        Button {
-                            presentEventChannels(pair.1, original: pair.0)
-                        } label: {
+                    ForEach(0..<min(summaries.count, 16), id: \.self) { index in
+                        let match = summaries[index]
+                        Button { presentEventChannels(match.program, original: match.channel) } label: {
                             VStack(alignment: .leading, spacing: 12) {
-                            Text(pair.1.isLiveAiring ? "LIVE" : pair.1.startTime.formatted(date: .omitted, time: .shortened))
-                                .font(.caption.bold())
-                                .foregroundColor(pair.1.isLiveAiring ? .red : .gray)
-                            Text(pair.1.displayTitle)
-                                .font(.headline)
-                                .lineLimit(2)
-                            Text(pair.0.name)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 110, alignment: .leading)
-                        .padding(16)
-                        .background(surface, in: RoundedRectangle(cornerRadius: 14))
+                                Text(match.program.isLiveAiring ? "LIVE" :
+                                     match.program.startTime.formatted(date: .omitted, time: .shortened))
+                                    .font(.caption.bold())
+                                    .foregroundColor(match.program.isLiveAiring ? .red : .gray)
+                                Text(match.program.displayTitle).font(.headline).lineLimit(2)
+                                Text("\(match.channelCount) channel\(match.channelCount == 1 ? "" : "s")")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 110, alignment: .leading)
+                            .padding(16)
+                            .background(surface, in: RoundedRectangle(cornerRadius: 14))
                         }
                         .buttonStyle(.plain)
                     }
@@ -615,17 +685,77 @@ struct SportsHubBetaView: View {
         }
     }
 
-    private var networksContent: some View {
-        let channels = liveTV.channels.filter {
-            let value = [ $0.name, $0.groupTitle ?? "" ].joined(separator: " ").lowercased()
-            return ["sport", "espn", "tnt", "nba", "nfl", "mlb", "nhl", "formula", "f1"].contains { value.contains($0) }
+    private func isSportsChannel(_ channel: UnifiedChannel) -> Bool {
+        let name = [channel.name, channel.groupTitle ?? ""].joined(separator: " ").lowercased()
+        let terms = ["sport", "espn", "bein", "dazn", "tnt", "nfl", "nba", "nhl",
+                     "mlb", "formula", "f1", "football", "soccer", "cricket",
+                     "tennis", "racing", "match", " vs ", " v ", " ufc"]
+        if terms.contains(where: { name.contains($0) }) { return true }
+        return liveTV.epg[channel.id]?.contains(where: { program in
+            isSportsProgram(program)
+        }) == true
+    }
+
+    private var sportsChannelGroups: [[UnifiedChannel]] {
+        var order: [String] = []
+        var groups: [String: [UnifiedChannel]] = [:]
+        for channel in liveTV.channels where isSportsChannel(channel) {
+            let key = normalizedChannelName(channel.name)
+            guard !key.isEmpty else { continue }
+            if groups[key] == nil { order.append(key) }
+            groups[key, default: []].append(channel)
         }
-        return VStack(alignment: .leading, spacing: 24) {
+        return order.compactMap { groups[$0] }
+    }
+
+    private func openSportsChannelGroup(_ group: [UnifiedChannel]) {
+        guard let first = group.first else { return }
+        if group.count == 1 {
+            onTune(first)
+        } else {
+            channelChoices = ChannelChoices(
+                title: first.name, exact: [], possible: [], other: group,
+                lookupMessage: "This channel appears in more than one playlist. Choose a stream."
+            )
+        }
+    }
+
+    private var networksContent: some View {
+        VStack(alignment: .leading, spacing: 24) {
             Text("Sports networks").font(.title.bold())
-            if channels.isEmpty {
-                emptyShelf("No sports networks found in your Live TV channels.", symbol: "tv")
+            Text("\(sportsChannelGroups.count) sports channels found across your Live TV playlists.")
+                .font(.footnote).foregroundStyle(.secondary)
+            if sportsChannelGroups.isEmpty {
+                emptyShelf("No sports channels found. Check Live TV playlists and their guide.", symbol: "tv")
             } else {
-                channelGrid(Array(channels.prefix(60)))
+                sportGroupGrid(Array(sportsChannelGroups.prefix(60)))
+            }
+        }
+    }
+
+    private func sportGroupGrid(_ groups: [[UnifiedChannel]]) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 5), spacing: 16) {
+            ForEach(groups.indices, id: \.self) { index in
+                let group = groups[index]
+                if let first = group.first {
+                    Button { openSportsChannelGroup(group) } label: {
+                        VStack(alignment: .leading, spacing: 12) {
+                            AsyncImage(url: first.logoURL) { image in
+                                image.resizable().scaledToFit()
+                            } placeholder: {
+                                Image(systemName: "tv").font(.largeTitle).foregroundStyle(.secondary)
+                            }
+                            .frame(height: 75).frame(maxWidth: .infinity)
+                            Text(first.name).font(.headline).lineLimit(2)
+                            Text(group.count > 1 ? "\(group.count) streams" : (first.groupTitle ?? "Live TV"))
+                                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, minHeight: 160)
+                        .background(surface, in: RoundedRectangle(cornerRadius: 16))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
     }
@@ -674,7 +804,11 @@ struct SportsHubBetaView: View {
     private var sportPicker: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 14) {
-                ForEach(Sport.allCases) { item in
+                Button { showingSportsSetup = true } label: {
+                    Label("Choose sports", systemImage: "slider.horizontal.3")
+                }
+                .buttonStyle(.bordered)
+                ForEach(chosenSports) { item in
                     Button {
                         sport = item
                         sportTab = .watch
@@ -745,9 +879,8 @@ struct SportsHubBetaView: View {
             Text("Match schedule").font(.title2.bold())
             sportPicker
             sportsDBSchedule
-            Text("This view will add the Sportset-style sports filter and timeline.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
+            Text("Sports channels from your playlists").font(.title2.bold())
+            sportGroupGrid(Array(sportsChannelGroups.prefix(60)))
         }
     }
 
@@ -805,6 +938,8 @@ struct SportsHubBetaView: View {
     private var settingsContent: some View {
         VStack(alignment: .leading, spacing: 24) {
             Text("Sports Hub Settings").font(.title.bold())
+            Button("Choose sports") { showingSportsSetup = true }
+                .buttonStyle(.borderedProminent)
             HStack {
                 Text("Default league")
                 Spacer()
