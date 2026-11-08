@@ -203,7 +203,7 @@ actor MovieBoxWebCodeService: MovieBoxDeviceCodeService {
     }
 
     /// Reads a show's page and its embedded season list. Does not request video URLs.
-    func fetchShowDetail(id: String) async throws -> MovieBoxWebShowDetail {
+    func fetchShowDetail(id: String, season: Int? = nil) async throws -> MovieBoxWebShowDetail {
         guard MovieBoxWebSessionStore.load() != nil else {
             throw MovieBoxWebCatalogError.noSavedSession
         }
@@ -211,16 +211,27 @@ actor MovieBoxWebCodeService: MovieBoxDeviceCodeService {
               id.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }) else {
             throw MovieBoxWebShowDetailError.invalidShowID
         }
+        if let season, !(0...100).contains(season) {
+            throw MovieBoxWebShowDetailError.missingEpisodeData
+        }
 
-        var request = URLRequest(url: baseURL.appendingPathComponent("tvshow/\(id)"))
+        let detailURL = baseURL.appendingPathComponent("tvshow").appendingPathComponent(id)
+        var components = URLComponents(url: detailURL, resolvingAgainstBaseURL: false)
+        if let season {
+            components?.queryItems = [URLQueryItem(name: "season", value: String(season))]
+        }
+        var request = URLRequest(url: components?.url ?? detailURL)
         request.httpMethod = "GET"
         request.timeoutInterval = 20
         request.setValue("text/html", forHTTPHeaderField: "Accept")
 
         let (data, response) = try await session.data(for: request)
         try checkResponse(response)
+        guard response.url?.path.hasPrefix("/tvshow/\(id)") == true else {
+            throw MovieBoxWebShowDetailError.signInRequired
+        }
         guard let html = String(data: data, encoding: .utf8) else {
-            throw MovieBoxWebShowDetailError.missingDetails
+            throw MovieBoxWebShowDetailError.missingEpisodeData
         }
         return try MovieBoxWebShowDetailParser.detail(from: html, id: id)
     }
