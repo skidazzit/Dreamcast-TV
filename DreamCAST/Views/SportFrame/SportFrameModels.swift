@@ -6,6 +6,7 @@ struct SportEvent: Decodable, Identifiable {
     let strHomeTeam: String?
     let strAwayTeam: String?
     let strLeague: String?
+    let strSport: String?
     let strHomeTeamBadge: String?
     let strAwayTeamBadge: String?
     let dateEvent: String?
