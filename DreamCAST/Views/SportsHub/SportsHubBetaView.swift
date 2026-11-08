@@ -57,6 +57,16 @@ struct SportsHubBetaView: View {
     @State private var section: Section = .home
     @State private var sport: Sport = .football
     @State private var sportTab: SportTab = .watch
+    @State private var channelChoices: ChannelChoices?
+
+    private struct ChannelChoices: Identifiable {
+        let id = UUID()
+        let title: String
+        let exact: [UnifiedChannel]
+        let possible: [UnifiedChannel]
+        let other: [UnifiedChannel]
+    }
+
     @State private var selectedDay = 1
     @State private var selectedLeague = "All leagues"
 
@@ -112,8 +122,129 @@ struct SportsHubBetaView: View {
             if scoreSubscription == nil { scoreSubscription = scorePoller.subscribe() }
         }
         .onDisappear { scoreSubscription = nil }
+        .sheet(item: $channelChoices) { choices in
+            channelPicker(choices)
+        }
     }
 
+
+
+    private func presentGameChannels(_ game: ScoreGame) {
+        let exact = liveTV.channels.filter { channel in
+            liveTV.epg[channel.id]?.contains(where: { GameMatcher.matches($0, game) }) == true
+        }
+        let networkNames = (game.network ?? "")
+            .split(whereSeparator: { $0 == "/" || $0 == "," || $0 == "&" })
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { $0.count >= 3 }
+        let exactIDs = Set(exact.map(\.id))
+        let possible = liveTV.channels.filter { channel in
+            guard !exactIDs.contains(channel.id) else { return false }
+            let name = channel.name.lowercased()
+            return networkNames.contains { name.contains($0) || $0.contains(name) }
+        }
+        let used = exactIDs.union(possible.map(\.id))
+        let other = sportsChannels(excluding: used)
+        channelChoices = ChannelChoices(
+            title: "\(game.away.name) vs \(game.home.name)",
+            exact: exact, possible: possible, other: other
+        )
+    }
+
+    private func presentEventChannels(_ event: UnifiedProgram, original: UnifiedChannel) {
+        let exact = liveTV.channels.filter { channel in
+            liveTV.epg[channel.id]?.contains(where: { program in
+                program.displayTitle.localizedCaseInsensitiveCompare(event.displayTitle) == .orderedSame
+                    && abs(program.eventStart.timeIntervalSince(event.eventStart)) < 3600
+            }) == true
+        }
+        let confirmed = exact.isEmpty ? [original] : exact
+        let used = Set(confirmed.map(\.id))
+        channelChoices = ChannelChoices(
+            title: event.displayTitle,
+            exact: confirmed,
+            possible: [],
+            other: sportsChannels(excluding: used)
+        )
+    }
+
+    private func sportsChannels(excluding used: Set<String>) -> [UnifiedChannel] {
+        Array(liveTV.channels.filter { channel in
+            guard !used.contains(channel.id) else { return false }
+            let text = [channel.name, channel.groupTitle ?? ""].joined(separator: " ").lowercased()
+            return ["sport", "espn", "tnt", "nba", "nfl", "nhl", "mlb", "f1",
+                    "formula", "sky", "bein", "dazn"].contains { text.contains($0) }
+        }.prefix(40))
+    }
+
+    private func channelPicker(_ choices: ChannelChoices) -> some View {
+        ZStack {
+            background.ignoresSafeArea()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Choose a channel").font(.largeTitle.bold())
+                            Text(choices.title).font(.title3).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Close") { channelChoices = nil }
+                            .buttonStyle(.bordered)
+                    }
+                    if choices.exact.isEmpty && choices.possible.isEmpty && choices.other.isEmpty {
+                        Text("No matching channels were found in your playlists.")
+                            .foregroundStyle(.secondary)
+                    }
+                    channelPickerGroup("EPG matches", channels: choices.exact,
+                                       note: "These channels list the selected game in their guide.")
+                    channelPickerGroup("Possible network matches", channels: choices.possible,
+                                       note: "These channel names match the game's reported networks.")
+                    channelPickerGroup("Other sports channels", channels: choices.other,
+                                       note: "These are suggestions. Their schedules may differ.")
+                }
+                .padding(60)
+                .frame(maxWidth: 1500, alignment: .leading)
+            }
+        }
+    }
+
+    private func channelPickerGroup(_ name: String, channels: [UnifiedChannel], note: String) -> some View {
+        Group {
+            if !channels.isEmpty {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("\(name) (\(channels.count))").font(.title2.bold())
+                    Text(note).font(.footnote).foregroundStyle(.secondary)
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 3), spacing: 16) {
+                        ForEach(channels) { channel in
+                            Button {
+                                channelChoices = nil
+                                onTune(channel)
+                            } label: {
+                                HStack(spacing: 16) {
+                                    AsyncImage(url: channel.logoURL) { image in
+                                        image.resizable().scaledToFit()
+                                    } placeholder: {
+                                        Image(systemName: "tv").foregroundStyle(.secondary)
+                                    }
+                                    .frame(width: 72, height: 52)
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        Text(channel.name).font(.headline).lineLimit(2)
+                                        Text(channel.groupTitle ?? "Live TV")
+                                            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "play.fill").foregroundStyle(.secondary)
+                                }
+                                .padding(14)
+                                .background(surface, in: RoundedRectangle(cornerRadius: 14))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     private var favouriteChannels: some View {
         let favorites = liveTV.channels.filter {
@@ -146,7 +277,7 @@ struct SportsHubBetaView: View {
                     ForEach(0..<min(upcoming.count, 16), id: \.self) { index in
                         let pair = upcoming[index]
                         Button {
-                            onTune(pair.0)
+                            presentEventChannels(pair.1, original: pair.0)
                         } label: {
                             VStack(alignment: .leading, spacing: 12) {
                             Text(pair.1.isLiveAiring ? "LIVE" : pair.1.startTime.formatted(date: .omitted, time: .shortened))
@@ -222,19 +353,20 @@ struct SportsHubBetaView: View {
                                     Text(game.home.score.map { String($0) } ?? "–")
                                 }
                                 if let channel = airing[game.id] {
-                                    Button {
-                                        onTune(channel)
-                                    } label: {
-                                        Label("Watch on \(channel.name)", systemImage: "play.fill")
-                                            .font(.caption.bold())
-                                    }
-                                    .buttonStyle(.bordered)
-                                    .tint(.green)
+                                    Text("EPG match: \(channel.name)")
+                                        .font(.caption).foregroundStyle(.green)
                                 } else {
-                                    Text(game.network ?? "Channel not matched")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
+                                    Text(game.network ?? "No confirmed channel")
+                                        .font(.caption).foregroundStyle(.secondary)
                                 }
+                                Button {
+                                    presentGameChannels(game)
+                                } label: {
+                                    Label("Choose channel", systemImage: "list.bullet")
+                                        .font(.caption.bold())
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(.cyan)
                             }
                             .font(.headline)
                             .padding(20)
