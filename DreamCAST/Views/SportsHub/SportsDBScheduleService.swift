@@ -10,6 +10,9 @@ nonisolated struct SportsDBEvent: Decodable, Identifiable, Sendable {
     let strSport: String?
     let strLeague: String?
     let strLeagueBadge: String?
+    let idHomeTeam: String?
+    let idAwayTeam: String?
+    let strTimestamp: String?
     let strHomeTeam: String?
     let strAwayTeam: String?
     let strHomeTeamBadge: String?
@@ -27,6 +30,7 @@ nonisolated struct SportsDBEvent: Decodable, Identifiable, Sendable {
     var sport: String { strSport ?? "" }
 
     var startTime: Date? {
+        if let strTimestamp, let stamp = ISO8601DateFormatter().date(from: strTimestamp + (strTimestamp.hasSuffix("Z") ? "" : "Z")) { return stamp }
         guard let dateEvent else { return nil }
         let combined = "\(dateEvent)T\(strTime ?? "00:00:00")Z"
         return ISO8601DateFormatter().date(from: combined)
@@ -90,8 +94,9 @@ actor SportsDBScheduleClient {
         let events: [SportsDBEvent]
     }
     private var cache: [String: CacheEntry] = [:]
+    private var badgeCache: [String: URL?] = [:]
     private let ttl: TimeInterval = 15 * 60
-    func events(on date: Date, forceRefresh: Bool = false) async throws -> [SportsDBEvent] {
+    func events(on date: Date, sport: String, forceRefresh: Bool = false) async throws -> [SportsDBEvent] {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.timeZone = .current
@@ -99,7 +104,7 @@ actor SportsDBScheduleClient {
         let day = formatter.string(from: date)
         let premiumKey = SportsDBPremiumKeyStore.read()
         let tier = premiumKey == nil ? "free" : "premium"
-        let cacheKey = "\(tier):\(day)"
+        let cacheKey = "\(tier):\(day):\(sport)"
         if !forceRefresh, let entry = cache[cacheKey], Date().timeIntervalSince(entry.fetchedAt) < ttl {
             return entry.events
         }
@@ -108,19 +113,44 @@ actor SportsDBScheduleClient {
             throw URLError(.badURL)
         }
         var components = URLComponents(url: base, resolvingAgainstBaseURL: false)!
-        components.queryItems = [URLQueryItem(name: "d", value: day)]
+        components.queryItems = [URLQueryItem(name: "d", value: day), URLQueryItem(name: "s", value: sport)]
         guard let url = components.url else { return [] }
         var request = URLRequest(url: url)
         request.timeoutInterval = 15
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, response) = try await URLSession.shared.data(for: request)
-        guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
-            throw URLError(.badServerResponse)
-        }
+        guard let response = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        if response.statusCode == 401 || response.statusCode == 403 { throw SportsDBScheduleError.invalidKey }
+        if response.statusCode == 429 { throw SportsDBScheduleError.rateLimited }
+        guard response.statusCode == 200 else { throw URLError(.badServerResponse) }
         let events = try JSONDecoder().decode(SportsDBDayResponse.self, from: data).events ?? []
         cache[cacheKey] = CacheEntry(fetchedAt: Date(), events: events)
         return events
     }
+
+    func teamBadge(id: String) async -> URL? {
+        if let cached = badgeCache[id] { return cached }
+        let apiKey = SportsDBPremiumKeyStore.read() ?? "123"
+        guard let url = URL(string: "https://www.thesportsdb.com/api/v1/json/\(apiKey)/lookupteam.php?id=\(id)") else { return nil }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 10
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              (response as? HTTPURLResponse)?.statusCode == 200,
+              let result = try? JSONDecoder().decode(SportsDBTeamLookup.self, from: data),
+              let raw = result.teams?.first?.strBadge,
+              let badge = URL(string: raw), badge.scheme == "https" else { return nil }
+        badgeCache[id] = badge
+        return badge
+    }
+}
+
+private struct SportsDBTeamLookup: Decodable {
+    struct Team: Decodable { let strBadge: String? }
+    let teams: [Team]?
+}
+
+enum SportsDBScheduleError: Error {
+    case invalidKey, rateLimited
 }
 
 @MainActor
@@ -130,21 +160,32 @@ final class SportsDBScheduleModel: ObservableObject {
     @Published private(set) var errorMessage: String?
     private var generation = 0
 
-    func load(date: Date, forceRefresh: Bool = false) {
+    @Published private(set) var loadedCount = 0
+
+    func load(date: Date, sport: String, forceRefresh: Bool = false) {
         generation += 1
         let current = generation
         isLoading = true
         errorMessage = nil
         Task {
             do {
-                let results = try await SportsDBScheduleClient.shared.events(on: date, forceRefresh: forceRefresh)
+                let results = try await SportsDBScheduleClient.shared.events(on: date, sport: sport, forceRefresh: forceRefresh)
                 guard current == generation else { return }
                 events = results
+                loadedCount = results.count
                 isLoading = false
             } catch {
                 guard current == generation else { return }
                 events = []
-                errorMessage = "TheSportsDB schedule is unavailable right now."
+                loadedCount = 0
+                if let serviceError = error as? SportsDBScheduleError {
+                    switch serviceError {
+                    case .invalidKey: errorMessage = "TheSportsDB rejected this Premium key. Check Sports Hub Settings."
+                    case .rateLimited: errorMessage = "TheSportsDB rate limit reached. Please wait a minute."
+                    }
+                } else {
+                    errorMessage = "Could not load TheSportsDB matches. Check your network and API key."
+                }
                 isLoading = false
             }
         }
