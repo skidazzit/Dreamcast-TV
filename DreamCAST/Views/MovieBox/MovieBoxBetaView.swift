@@ -38,10 +38,12 @@ struct MovieBoxBetaView: View {
     @State private var page: Page = .overview
     @StateObject private var codeLogin = MovieBoxWebCodeLoginModel()
     @StateObject private var webMovies = MovieBoxWebMoviesModel()
+    @StateObject private var webMovieDetail = MovieBoxWebMovieDetailModel()
     @StateObject private var webShows = MovieBoxWebShowsModel()
     @StateObject private var webShowDetail = MovieBoxWebShowDetailModel()
     @FocusState private var codeButtonFocused: Bool
     @State private var selectedCatalogItem: CatalogSelection?
+    @State private var activeMovie: MovieBoxWebMovieCard?
     @State private var activeShow: MovieBoxWebShowCard?
 
     private struct CatalogSelection: Identifiable {
@@ -101,7 +103,11 @@ struct MovieBoxBetaView: View {
                     }
 
                     if page == .movies {
-                        movieCatalog
+                        if let activeMovie {
+                            movieDetailView(for: activeMovie)
+                        } else {
+                            movieCatalog
+                        }
                     } else if page == .series {
                         if let activeShow {
                             showDetailView(for: activeShow)
@@ -238,13 +244,17 @@ struct MovieBoxBetaView: View {
                 .padding(.horizontal, page == .movies || page == .series ? MediaRowMetrics.rowLeading : 90)
                 .padding(.vertical, 28)
             }
-            .id("\(page.rawValue)-\(activeShow?.id ?? "grid")")
+            .id("\(page.rawValue)-\(activeMovie?.id ?? activeShow?.id ?? "grid")")
         }
         .onChange(of: page) { newPage in
             if newPage != .account { codeLogin.cancel() }
             else { codeButtonFocused = true }
             if newPage == .movies { webMovies.load() }
-            else { webMovies.cancel() }
+            else {
+                webMovies.cancel()
+                webMovieDetail.cancel()
+                activeMovie = nil
+            }
             if newPage == .series { webShows.load() }
             else {
                 webShows.cancel()
@@ -255,6 +265,7 @@ struct MovieBoxBetaView: View {
         .onDisappear {
             codeLogin.cancel()
             webMovies.cancel()
+            webMovieDetail.cancel()
             webShows.cancel()
             webShowDetail.cancel()
         }
@@ -300,11 +311,8 @@ struct MovieBoxBetaView: View {
                 ) {
                     ForEach(webMovies.movies) { movie in
                         Button {
-                            selectedCatalogItem = CatalogSelection(
-                                id: "movie-\(movie.id)",
-                                title: movie.title,
-                                message: "Movie details and playback are not connected yet."
-                            )
+                            activeMovie = movie
+                            webMovieDetail.load(movieID: movie.id)
                         } label: {
                             catalogPoster(title: movie.title, posterURL: movie.posterURL, symbol: "film")
                         }
@@ -313,13 +321,77 @@ struct MovieBoxBetaView: View {
                 }
             }
 
-            Text("Beta: Listings only. Playback and account rights are not verified yet.")
+            Text("Select a movie to view its details. Playback is not enabled.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 24)
         .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22))
+        .focusSection()
+    }
+
+    private func movieDetailView(for movie: MovieBoxWebMovieCard) -> some View {
+        VStack(alignment: .leading, spacing: 28) {
+            HStack(spacing: 20) {
+                Button {
+                    webMovieDetail.cancel()
+                    activeMovie = nil
+                } label: {
+                    Label("Back to Movies", systemImage: "chevron.left")
+                }
+                .buttonStyle(.bordered)
+
+                Spacer()
+
+                Button("Refresh") { webMovieDetail.load(movieID: movie.id) }
+                    .buttonStyle(.bordered)
+            }
+
+            if webMovieDetail.phase == .loading {
+                ProgressView("Loading movie details…")
+            } else if webMovieDetail.phase == .failed {
+                Text(webMovieDetail.errorMessage ?? "Could not load this movie.")
+                    .foregroundStyle(.orange)
+            }
+
+            if let detail = webMovieDetail.detail {
+                HStack(alignment: .top, spacing: 36) {
+                    AsyncImage(url: detail.posterURL ?? movie.posterURL) { phase in
+                        if let image = phase.image {
+                            image.resizable().scaledToFill()
+                        } else {
+                            Color.gray.opacity(0.18)
+                                .overlay(Image(systemName: "film").font(.system(size: 52)))
+                        }
+                    }
+                    .frame(width: MediaRowMetrics.poster.art.width, height: MediaRowMetrics.poster.art.height)
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                    VStack(alignment: .leading, spacing: 18) {
+                        Text(detail.title)
+                            .font(.largeTitle.bold())
+                        if let year = detail.year {
+                            Text(year)
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let synopsis = detail.synopsis {
+                            Text(synopsis)
+                                .font(.body)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Text("Read-only movie details. No playback is available in this beta.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 24)
         .focusSection()
     }
 
