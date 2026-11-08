@@ -16,6 +16,7 @@ struct SportFrameHome: View {
     @State private var matchSportFilter = "All Sports"
     @State private var matchLeagueFilter = "All Leagues"
     @State private var selectedEvent: SportEvent?
+    @FocusState private var focusedCard: String?
     @State private var premiumKeyInput = ""
     @State private var premiumKeySaved = SportsDBAccess.hasPremiumKey
     @State private var credentialRevision = 0
@@ -134,15 +135,16 @@ struct SportFrameHome: View {
             }
         }
         .task(id: "\(followedSportsValue)-\(sportOrderValue)-\(dayOffset)-\(credentialRevision)-\(refreshRevision)") {
-            repeat {
+            await fixtures.fetch(sports: followedSports, date: Calendar.current.date(byAdding: .day, value: dayOffset, to: Date()) ?? Date())
+        }
+        .task(id: "live-\(followedSportsValue)-\(dayOffset)-\(credentialRevision)") {
+            guard dayOffset == 0 else { return }
+            while !Task.isCancelled {
+                // The schedule and cards stay in place. Only live status changes.
+                do { try await Task.sleep(for: .seconds(90)) } catch { break }
                 if Task.isCancelled { break }
-                await fixtures.fetch(sports: followedSports, date: Calendar.current.date(byAdding: .day, value: dayOffset, to: Date()) ?? Date())
-                if dayOffset != 0 { break }
-                // Keep current scores fresh while SportFrame is open, without
-                // exceeding free-tier limits for large sport lists.
-                let seconds: Double = followedSports.count > 15 ? 180 : 90
-                do { try await Task.sleep(for: .seconds(seconds)) } catch { break }
-            } while !Task.isCancelled
+                await fixtures.refreshLive()
+            }
         }
         .task(id: credentialRevision) {
             await catalog.refresh()
@@ -289,8 +291,18 @@ struct SportFrameHome: View {
     private func sportLeagueCard(title: String, sport: String, events: [SportEvent]) -> some View {
         VStack(alignment: .leading, spacing: 15) {
             HStack(spacing: 9) {
-                Image(systemName: sportSymbol(sport))
-                    .font(.headline).foregroundStyle(.white.opacity(0.85))
+                if let badge = catalog.badgeURL(for: title, sport: sport) {
+                    AsyncImage(url: badge) { image in
+                        image.resizable().scaledToFit()
+                    } placeholder: {
+                        Image(systemName: sportSymbol(sport)).foregroundStyle(.secondary)
+                    }
+                    .frame(width: 32, height: 32)
+                } else {
+                    Image(systemName: sportSymbol(sport))
+                        .font(.headline).foregroundStyle(.white.opacity(0.85))
+                        .frame(width: 32, height: 32)
+                }
                 Text(title)
                     .font(.system(size: 20, weight: .semibold))
                     .fixedSize(horizontal: false, vertical: true)
@@ -325,12 +337,18 @@ struct SportFrameHome: View {
                     .padding(.vertical, 5)
                 }
                 .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .focused($focusedCard, equals: "league-\(title)-\(event.idEvent)")
+                .background(focusedCard == "league-\(title)-\(event.idEvent)" ? Color.white.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
                 Divider().opacity(0.35)
             }
         }
         .padding(20)
         .frame(width: 430, alignment: .topLeading)
         .background(panel, in: RoundedRectangle(cornerRadius: 19))
+        .task(id: "badge-\(sport)-\(title)") {
+            await catalog.loadBadge(for: title, sport: sport)
+        }
     }
 
     private func sportSymbol(_ sport: String) -> String {
@@ -396,6 +414,13 @@ struct SportFrameHome: View {
             .frame(width: 330, alignment: .topLeading)
         }
         .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .focused($focusedCard, equals: "match-\(event.idEvent)")
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(focusedCard == "match-\(event.idEvent)" ? Color.white : Color.clear, lineWidth: 3)
+                .allowsHitTesting(false)
+        }
     }
 
     private func matchBadge(_ url: URL?) -> some View {
