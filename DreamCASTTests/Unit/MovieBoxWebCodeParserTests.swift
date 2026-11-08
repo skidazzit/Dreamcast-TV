@@ -30,4 +30,20 @@ final class MovieBoxWebCodeParserTests: XCTestCase {
         XCTAssertEqual(stringApproved, .approved)
         XCTAssertThrowsError(try MovieBoxWebCodeParser.status(from: Data(#"{"unknown":1}"#.utf8)))
     }
+
+    func testApprovedResponseCanSupplySessionWithoutExposingItToUI() {
+        let data = Data(#"{"code":1,"ui":"dummy-user-session","ci":"dummy-client"}"#.utf8)
+        let approved = MovieBoxWebCodeParser.approvedSession(from: data)
+
+        XCTAssertNotNil(approved)
+        XCTAssertEqual(approved?.ui, "dummy-user-session")
+        XCTAssertEqual(approved?.ci, "dummy-client")
+        XCTAssertNil(MovieBoxWebCodeParser.approvedSession(from: Data(#"{"code":0,"ui":"dummy"}"#.utf8)))
+    }
+
+    func testMissingOrBlankUserSessionIsNotSaved() {
+        XCTAssertNil(MovieBoxWebCodeParser.approvedSession(from: Data(#"{"code":1}"#.utf8)))
+        XCTAssertNil(MovieBoxWebCodeParser.approvedSession(from: Data(#"{"code":1,"ui":" "}"#.utf8)))
+        XCTAssertNil(MovieBoxWebSession(ui: "", ci: "dummy-client"))
+    }
 }
