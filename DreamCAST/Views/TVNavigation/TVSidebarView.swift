@@ -798,6 +798,11 @@ struct TVSidebarView: View {
                 Color.clear
             case .home:
                 PlexHomeRoot()
+            case .sportFrame:
+                SportFrameHome { channel in
+                    LiveTVLaunchMiniRequest.shared.channelID = channel.id
+                    selectedTab = .liveTV(sourceId: combineLiveTVSources ? nil : channel.sourceId)
+                }
             case .providerLibrary:
                 // Unreachable: mounted directly as a UIKit VC above. Kept so
                 // this switch stays exhaustive over SidebarTab.
