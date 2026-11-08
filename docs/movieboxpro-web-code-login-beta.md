@@ -55,14 +55,26 @@ The parser does not execute website scripts or extract profile data. Cards
 show a placeholder when opened because detail and playback APIs are not yet
 verified. It only loads the first page and does not paginate yet.
 
+## Read-only TV Shows pilot
+
+The user also supplied HTML from the site's TV Shows page. It has 20 numeric
+`/tvshow/<id>` links with title attributes and CSS poster images. The response
+is not stored in the repository, as it may contain private account content.
+
+The TV Shows tab requests `GET /tvshow` with the saved session, then shows
+focusable cards. It shares the movie poster layout and loading controls.
+Selecting a show shows a placeholder. There is no season or episode access,
+pagination, playback, or download support in this pilot.
+
 ## Limits and test notes
 
 - The website may reject automated requests or change its HTML. This has not
   been tested against the live service in this environment.
 - Approval or Keychain storage is **not** proof the account session is valid.
-  The app-side Movies request still needs a live simulator test. We need
-  session validation, pagination, TV catalog, account-level sign-out or device
-  revocation, detail and playback checks.
+  The movie grid has been tested in the user's simulator. The new TV Shows
+  grid still needs a live simulator test. We need session validation,
+  pagination, account-level sign-out or device revocation, detail and playback
+  checks.
 - The pilot does not fetch playable video or launch playback.
 - Live tests should use the user's own account. Never send login codes,
   cookies, tokens, or full unsanitized network captures in bug reports.
