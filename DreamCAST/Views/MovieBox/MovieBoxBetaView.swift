@@ -435,18 +435,36 @@ struct MovieBoxBetaView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 20) {
-                    Text("Seasons")
-                        .font(.title2.bold())
-
-                    HStack(spacing: 16) {
-                        ForEach(detail.seasons, id: \.self) { season in
-                            Button("Season \(season)") {
-                                webShowDetail.selectSeason(season)
-                            }
-                            .buttonStyle(.bordered)
-                            .tint(webShowDetail.selectedSeason == season ? .cyan : .gray)
+                    HStack(spacing: 20) {
+                        Text("Seasons")
+                            .font(.title2.bold())
+                        if detail.seasons.count > 8 {
+                            Text("Use left/right to browse \(detail.seasons.count) seasons")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
                         }
                     }
+
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(spacing: 16) {
+                            ForEach(detail.seasons, id: \.self) { season in
+                                Button {
+                                    webShowDetail.selectSeason(season)
+                                } label: {
+                                    Text("Season \(season)")
+                                        .font(.headline)
+                                        .lineLimit(1)
+                                        .frame(width: 160, height: 54)
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(webShowDetail.selectedSeason == season ? .cyan : .gray)
+                            }
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 12)
+                    }
+                    .frame(height: 92)
+                    .focusSection()
 
                     let episodes = detail.episodes(in: webShowDetail.selectedSeason)
                     Text("\(episodes.count) episodes")
