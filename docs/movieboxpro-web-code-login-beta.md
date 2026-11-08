@@ -27,13 +27,28 @@ approval, expiry, error, or cancellation. The UI never logs the code.
 This path uses the public website's browser flow. It does not copy app-held
 Android keys or use the Android encrypted API.
 
+## Approved session storage
+
+After the phone approves a code, DreamCAST checks for the website's `ui` and
+optional `ci` account values. It accepts values from the approval response or
+provider-owned cookies. If an account value exists, it saves these fields in
+the Apple TV Keychain under a MovieBox-only service name. Storage is restricted
+to the current device. No account values are written to logs or ordinary app
+preferences. On the next launch, DreamCAST restores these fields as web
+cookies for the provider's HTTPS host.
+
+The Account page distinguishes **code approved** from **session saved**. A
+**Forget session** button removes the local Keychain record and clears the
+provider's cookies in the active URL session. This is not server-side revocation.
+
 ## Limits and test notes
 
 - The website may reject automated requests or change its HTML. This has not
   been tested against the live service in this environment.
-- Approval is **not** proof that DreamCAST's MovieBox catalog is ready.
-  Catalog access, durable session storage, session validation, and sign-out
-  still need separate work.
+- Approval or Keychain storage is **not** proof the account session is valid.
+  The stored session has not yet been tested with an authenticated catalog
+  endpoint. We still need session validation, catalog access, account-level
+  sign-out or device revocation, and playback checks.
 - The pilot does not fetch or play MovieBox media.
 - Live tests should use the user's own account. Never send login codes,
   cookies, tokens, or full unsanitized network captures in bug reports.
