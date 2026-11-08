@@ -60,6 +60,15 @@ nonisolated enum MovieBoxWebCodeParser {
         guard let number else { throw MovieBoxWebCodeError.invalidCheckResponse }
         return number == 1 ? .approved : .awaitingPhone
     }
+
+    /// The website may include login values after the phone approves the code.
+    /// Never expose these values through UI or diagnostic logs.
+    static func approvedSession(from data: Data) -> MovieBoxWebSession? {
+        guard (try? status(from: data)) == .approved,
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let ui = json["ui"] as? String else { return nil }
+        return MovieBoxWebSession(ui: ui, ci: json["ci"] as? String)
+    }
 }
 
 /// Holds cookies only in memory. Approval does not yet grant catalog access.
@@ -79,7 +88,8 @@ actor MovieBoxWebCodeService: MovieBoxDeviceCodeService {
 
         // This is a fresh browser-style ID, not another device's identity.
         // The site's device_bind.js sets these cookies for new visitors.
-        let clientID = "mbp_" + UUID().uuidString.lowercased()
+        let savedSession = MovieBoxWebSessionStore.load()
+        let clientID = savedSession?.ci ?? ("mbp_" + UUID().uuidString.lowercased())
         if let cookies = settings.httpCookieStorage {
             for name in ["ci", "cl"] {
                 if let cookie = HTTPCookie(properties: [
@@ -91,6 +101,9 @@ actor MovieBoxWebCodeService: MovieBoxDeviceCodeService {
                 ]) {
                     cookies.setCookie(cookie)
                 }
+            }
+            if let savedSession {
+                Self.installCookie(name: "ui", value: savedSession.ui, into: cookies)
             }
         }
         self.session = URLSession(configuration: settings)
@@ -122,7 +135,57 @@ actor MovieBoxWebCodeService: MovieBoxDeviceCodeService {
 
         let (data, response) = try await session.data(for: request)
         try checkResponse(response)
-        return try MovieBoxWebCodeParser.status(from: data)
+        let status = try MovieBoxWebCodeParser.status(from: data)
+        if status == .approved {
+            // An approval reply may send ui/ci directly, or set them as cookies.
+            let websiteCookies = session.configuration.httpCookieStorage?.cookies ?? []
+            let cookieUI = websiteCookies.first(where: { $0.name == "ui" && Self.isProviderCookie($0) })?.value
+            let cookieCI = websiteCookies.first(where: { $0.name == "ci" && Self.isProviderCookie($0) })?.value
+            let responseSession = MovieBoxWebCodeParser.approvedSession(from: data)
+            let approved = responseSession.flatMap {
+                MovieBoxWebSession(ui: $0.ui, ci: $0.ci ?? cookieCI)
+            } ?? cookieUI.flatMap { MovieBoxWebSession(ui: $0, ci: cookieCI) }
+            if let approved {
+                try MovieBoxWebSessionStore.save(approved)
+                if let storage = session.configuration.httpCookieStorage {
+                    Self.installCookie(name: "ui", value: approved.ui, into: storage)
+                    if let ci = approved.ci {
+                        Self.installCookie(name: "ci", value: ci, into: storage)
+                    }
+                }
+            }
+        }
+        return status
+    }
+
+    func hasSavedSession() -> Bool {
+        MovieBoxWebSessionStore.load() != nil
+    }
+
+    func forgetSavedSession() throws {
+        try MovieBoxWebSessionStore.clear()
+        if let cookies = session.configuration.httpCookieStorage {
+            for cookie in cookies.cookies ?? [] where Self.isProviderCookie(cookie) {
+                cookies.deleteCookie(cookie)
+            }
+        }
+    }
+
+    private static func isProviderCookie(_ cookie: HTTPCookie) -> Bool {
+        let domain = cookie.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        return domain == "movieboxpro.app" || domain == "www.movieboxpro.app"
+    }
+
+    private static func installCookie(name: String, value: String, into storage: HTTPCookieStorage) {
+        if let cookie = HTTPCookie(properties: [
+            .domain: "www.movieboxpro.app",
+            .path: "/",
+            .name: name,
+            .value: value,
+            .secure: "TRUE"
+        ]) {
+            storage.setCookie(cookie)
+        }
     }
 
     private func checkResponse(_ response: URLResponse) throws {
