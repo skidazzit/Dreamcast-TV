@@ -51,6 +51,39 @@ final class MovieBoxWebShowDetailParserTests: XCTestCase {
         XCTAssertThrowsError(try MovieBoxWebShowDetailParser.detail(from: html, id: "12345"))
     }
 
+    func testReadsRenderedEpisodesWhenEmbeddedSeasonJSONIsMissing() throws {
+        let html = """
+        <title>Sample Show - MovieBoxPro</title>
+        <div class="tv_episode">
+          <a href="javascript:;" season="1" episode="1" play="private-value" class="start_app_episode watch_tab">
+            <p class="chapter_img" style='background-image:url("https://images.example.test/ep1.jpg")'></p>
+          </a>
+          <a href="javascript:;" season="1" episode="1" class="start_app_episode">
+            <p>Opening Episode</p>
+          </a>
+          <p>October 2026 | 43 minutes</p>
+        </div>
+        <a href="/tvshow/12345?season=1">Season 1</a>
+        <a href="/tvshow/12345?season=2">Season 2</a>
+        """
+        let detail = try MovieBoxWebShowDetailParser.detail(from: html, id: "12345")
+
+        XCTAssertEqual(detail.title, "Sample Show")
+        XCTAssertEqual(detail.seasons, [1, 2])
+        XCTAssertEqual(detail.episodes.count, 1)
+        XCTAssertEqual(detail.episodes[0].title, "Opening Episode")
+        XCTAssertEqual(detail.episodes[0].runtimeMinutes, 43)
+        XCTAssertEqual(detail.episodes[0].thumbnailURL?.absoluteString, "https://images.example.test/ep1.jpg")
+        XCTAssertFalse(String(describing: detail).contains("private-value"))
+    }
+
+    func testDetectsLoginPage() throws {
+        let html = "<title>Login</title><p id=\"qrcode\">00000000</p>"
+        XCTAssertThrowsError(try MovieBoxWebShowDetailParser.detail(from: html, id: "12345")) { error in
+            XCTAssertEqual(error as? MovieBoxWebShowDetailError, .signInRequired)
+        }
+    }
+
     func testRejectsInvalidShowID() throws {
         XCTAssertThrowsError(try MovieBoxWebShowDetailParser.detail(from: "", id: "../../other"))
     }
