@@ -9,6 +9,10 @@ struct SportFrameHome: View {
     @State private var selectedLeague = "All Leagues"
     @State private var dayOffset = 0
     @State private var selectedEvent: SportEvent?
+    @State private var premiumKeyInput = ""
+    @State private var premiumKeySaved = SportsDBAccess.hasPremiumKey
+    @State private var credentialRevision = 0
+    @State private var credentialMessage: String?
 
     private let sports = ["Soccer", "Basketball", "Ice Hockey", "American Football", "Tennis", "Motorsport", "Cricket"]
     private let allLeagues = "All Leagues"
@@ -49,7 +53,7 @@ struct SportFrameHome: View {
                 .frame(maxWidth: 1900, alignment: .leading)
             }
         }
-        .task(id: "\(sport)-\(dayOffset)") {
+        .task(id: "\(sport)-\(dayOffset)-\(credentialRevision)") {
             await fixtures.fetch(sport: sport, date: Calendar.current.date(byAdding: .day, value: dayOffset, to: Date()) ?? Date())
         }
         .sheet(item: $selectedEvent) { event in
@@ -190,6 +194,39 @@ struct SportFrameHome: View {
 
     private var setupPage: some View {
         VStack(alignment: .leading, spacing: 22) {
+            Text("TheSportsDB Premium").font(.largeTitle.bold())
+            Text(premiumKeySaved ? "Premium key saved on this Apple TV" : "Using free sports data")
+                .foregroundStyle(premiumKeySaved ? accent : .secondary)
+            SecureField("Enter Premium API key", text: $premiumKeyInput)
+                .textContentType(.password)
+            HStack(spacing: 18) {
+                Button("Save Premium Key") {
+                    if SportsDBAccess.save(premiumKeyInput) {
+                        premiumKeyInput = ""
+                        premiumKeySaved = true
+                        credentialRevision += 1
+                        credentialMessage = "Key saved. Match data will reload with Premium access."
+                    } else {
+                        credentialMessage = "Could not save key. Use the API key from your TheSportsDB profile."
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                Button("Use Free Access") {
+                    SportsDBAccess.remove()
+                    premiumKeyInput = ""
+                    premiumKeySaved = false
+                    credentialRevision += 1
+                    credentialMessage = "Premium key removed. Free access is active."
+                }
+                .buttonStyle(.bordered)
+                .disabled(!premiumKeySaved)
+            }
+            if let credentialMessage {
+                Text(credentialMessage).font(.footnote).foregroundStyle(.secondary)
+            }
+            Text("Your key stays in the Apple TV Keychain. TheSportsDB v1 sends it in the request URL.")
+                .font(.footnote).foregroundStyle(.secondary)
+            Divider()
             Text("Live TV connection").font(.largeTitle.bold())
             Text("SportFrame uses your existing DreamCAST Live TV playlists.")
                 .foregroundStyle(.secondary)
@@ -197,7 +234,7 @@ struct SportFrameHome: View {
                 .font(.title2.bold()).foregroundStyle(accent)
             Text("Add or refresh M3U and Xtream sources in DreamCAST Live TV settings.")
                 .font(.footnote).foregroundStyle(.secondary)
-            Text("TheSportsDB free schedule limits results. Premium access is not yet wired into this pilot.")
+            Text("Premium expands TheSportsDB schedule limits. Channel playback still uses DreamCAST Live TV.")
                 .font(.footnote).foregroundStyle(.secondary)
         }
         .padding(28)
