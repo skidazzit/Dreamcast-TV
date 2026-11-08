@@ -125,6 +125,7 @@ struct TVSidebarView: View {
             showDiscover: showDiscoverTab && authManager.hasCredentials,
             showWatchlist: showWatchlistTab && authManager.hasCredentials,
             showFavorites: showFavoritesTab && hasFavoritesServer,
+            showMovieBox: true,
             order: librarySettings.libraryOrder,
             hiddenKeys: librarySettings.hiddenLibraryKeys,
             profileName: profileName,
@@ -798,6 +799,8 @@ struct TVSidebarView: View {
                 Color.clear
             case .home:
                 PlexHomeRoot()
+            case .movieBox:
+                MovieBoxBetaView()
             case .providerLibrary:
                 // Unreachable: mounted directly as a UIKit VC above. Kept so
                 // this switch stays exhaustive over SidebarTab.
