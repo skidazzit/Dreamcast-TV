@@ -28,7 +28,7 @@ struct MovieBoxBetaView: View {
             switch self {
             case .overview: "MovieBox Pro is not connected to DreamCAST yet."
             case .movies: "Read-only listings from your saved MovieBox web session."
-            case .series: "TV shows and episodes will appear after a supported account connection is ready."
+            case .series: "Read-only shows from your saved MovieBox web session."
             case .search: "Search will be available after we verify the provider's request format."
             case .account: "Connect your MovieBox Pro account using a TV code."
             }
@@ -38,8 +38,15 @@ struct MovieBoxBetaView: View {
     @State private var page: Page = .overview
     @StateObject private var codeLogin = MovieBoxWebCodeLoginModel()
     @StateObject private var webMovies = MovieBoxWebMoviesModel()
+    @StateObject private var webShows = MovieBoxWebShowsModel()
     @FocusState private var codeButtonFocused: Bool
-    @State private var selectedMovie: MovieBoxWebMovieCard?
+    @State private var selectedCatalogItem: CatalogSelection?
+
+    private struct CatalogSelection: Identifiable {
+        let id: String
+        let title: String
+        let message: String
+    }
 
     var body: some View {
         ZStack {
@@ -78,6 +85,8 @@ struct MovieBoxBetaView: View {
 
                     if page == .movies {
                         movieCatalog
+                    } else if page == .series {
+                        showCatalog
                     } else if page != .account {
                         VStack(alignment: .leading, spacing: 12) {
                             Text(page.rawValue)
@@ -190,7 +199,7 @@ struct MovieBoxBetaView: View {
                             Text("On your phone: MovieBox Pro → Code Login → Enter this code → Confirm.")
                                 .font(.body)
 
-                            Text("Beta: Movie listings are read-only. Playback is not enabled.")
+                            Text("Beta: Movies and TV shows are read-only. Playback is not enabled.")
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
@@ -214,15 +223,18 @@ struct MovieBoxBetaView: View {
             else { codeButtonFocused = true }
             if newPage == .movies { webMovies.load() }
             else { webMovies.cancel() }
+            if newPage == .series { webShows.load() }
+            else { webShows.cancel() }
         }
         .onDisappear {
             codeLogin.cancel()
             webMovies.cancel()
+            webShows.cancel()
         }
-        .alert(item: $selectedMovie) { movie in
+        .alert(item: $selectedCatalogItem) { item in
             Alert(
-                title: Text(movie.title),
-                message: Text("Movie details and playback are not connected yet."),
+                title: Text(item.title),
+                message: Text(item.message),
                 dismissButton: .default(Text("OK"))
             )
         }
@@ -259,29 +271,14 @@ struct MovieBoxBetaView: View {
                     spacing: 28
                 ) {
                     ForEach(webMovies.movies) { movie in
-                        Button { selectedMovie = movie } label: {
-                            VStack(alignment: .leading, spacing: 10) {
-                                AsyncImage(url: movie.posterURL) { phase in
-                                    if let image = phase.image {
-                                        image.resizable().scaledToFill()
-                                    } else {
-                                        Color.gray.opacity(0.18)
-                                            .overlay(Image(systemName: "film").font(.system(size: 52)))
-                                    }
-                                }
-                                .frame(height: 275)
-                                .frame(maxWidth: .infinity)
-                                .clipped()
-                                .background(.white.opacity(0.08))
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
-
-                                Text(movie.title)
-                                    .font(.headline)
-                                    .lineLimit(2)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                            .padding(12)
-                            .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 18))
+                        Button {
+                            selectedCatalogItem = CatalogSelection(
+                                id: "movie-\(movie.id)",
+                                title: movie.title,
+                                message: "Movie details and playback are not connected yet."
+                            )
+                        } label: {
+                            catalogPoster(title: movie.title, posterURL: movie.posterURL, symbol: "film")
                         }
                         .buttonStyle(.plain)
                     }
@@ -296,5 +293,85 @@ struct MovieBoxBetaView: View {
         .padding(24)
         .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22))
         .focusSection()
+    }
+
+    private var showCatalog: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            HStack(spacing: 24) {
+                Text("TV Shows")
+                    .font(.title.bold())
+                Spacer()
+                Button("Refresh") { webShows.load() }
+                    .buttonStyle(.bordered)
+            }
+
+            Text("Read-only TV show listings from your MovieBox Pro web session.")
+                .font(.body)
+                .foregroundStyle(.secondary)
+
+            if webShows.phase == .loading {
+                ProgressView("Loading TV shows…")
+            } else if webShows.phase == .failed {
+                Text(webShows.errorMessage ?? "Could not load TV shows.")
+                    .foregroundStyle(.orange)
+            } else if webShows.phase == .loaded {
+                Text("\(webShows.shows.count) TV shows found")
+                    .font(.headline)
+                    .foregroundStyle(.cyan)
+            }
+
+            if !webShows.shows.isEmpty {
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(), spacing: 24), count: 4),
+                    spacing: 28
+                ) {
+                    ForEach(webShows.shows) { show in
+                        Button {
+                            selectedCatalogItem = CatalogSelection(
+                                id: "show-\(show.id)",
+                                title: show.title,
+                                message: "TV show details, episodes, and playback are not connected yet."
+                            )
+                        } label: {
+                            catalogPoster(title: show.title, posterURL: show.posterURL, symbol: "tv")
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            Text("Beta: Listings only. Episodes and playback are not verified yet.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(24)
+        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22))
+        .focusSection()
+    }
+
+    private func catalogPoster(title: String, posterURL: URL?, symbol: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            AsyncImage(url: posterURL) { phase in
+                if let image = phase.image {
+                    image.resizable().scaledToFill()
+                } else {
+                    Color.gray.opacity(0.18)
+                        .overlay(Image(systemName: symbol).font(.system(size: 52)))
+                }
+            }
+            .frame(height: 275)
+            .frame(maxWidth: .infinity)
+            .clipped()
+            .background(.white.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+
+            Text(title)
+                .font(.headline)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(12)
+        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 18))
     }
 }
