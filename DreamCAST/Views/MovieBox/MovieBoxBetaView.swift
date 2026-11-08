@@ -37,6 +37,7 @@ struct MovieBoxBetaView: View {
 
     @State private var page: Page = .overview
     @StateObject private var codeLogin = MovieBoxWebCodeLoginModel()
+    @FocusState private var codeButtonFocused: Bool
 
     var body: some View {
         ZStack {
@@ -44,67 +45,88 @@ struct MovieBoxBetaView: View {
                 .ignoresSafeArea()
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 34) {
-                    HStack(spacing: 24) {
+                VStack(alignment: .leading, spacing: 20) {
+                    HStack(spacing: 18) {
                         Image(systemName: "play.tv.fill")
-                            .font(.system(size: 68))
+                            .font(.system(size: 52))
                             .foregroundStyle(.cyan)
 
-                        VStack(alignment: .leading, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 4) {
                             Text("MovieBox Pro")
                                 .font(.largeTitle.bold())
                             Text("DreamCAST beta")
-                                .font(.title3)
+                                .font(.body)
                                 .foregroundStyle(.secondary)
                         }
                     }
 
-                    HStack(spacing: 20) {
+                    HStack(spacing: 14) {
                         ForEach(Page.allCases) { item in
                             Button {
                                 page = item
                             } label: {
                                 Label(item.rawValue, systemImage: item.symbol)
                                     .font(.headline)
-                                    .frame(minWidth: 150, minHeight: 55)
+                                    .frame(minWidth: 130, minHeight: 44)
                             }
                             .buttonStyle(.bordered)
                             .tint(page == item ? .cyan : .gray)
                         }
                     }
 
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text(page.rawValue)
-                            .font(.title.bold())
-                        Text(page.detail)
-                            .font(.title3)
-                            .foregroundStyle(.secondary)
-
-                        HStack(spacing: 14) {
-                            Image(systemName: "person.crop.circle.badge.exclamationmark")
-                                .foregroundStyle(.yellow)
-                            Text(codeLogin.phase == .approved
-                                 ? "Account status: Code approved (beta)"
-                                 : "Account status: Not connected")
-                                .font(.headline)
-                        }
-                        .padding(.top, 10)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 190, alignment: .leading)
-                    .padding(32)
-                    .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22))
-
-                    if page == .account {
-                        VStack(alignment: .leading, spacing: 22) {
-                            Label("Code Login", systemImage: "number.square")
-                                .font(.title2.bold())
-                                .foregroundStyle(.cyan)
-
-                            Text("Get a short-lived TV code, then approve it on your phone or web browser.")
+                    if page != .account {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text(page.rawValue)
+                                .font(.title.bold())
+                            Text(page.detail)
                                 .font(.title3)
                                 .foregroundStyle(.secondary)
 
-                            VStack(alignment: .leading, spacing: 14) {
+                            Label("Account status: Not connected", systemImage: "person.crop.circle.badge.exclamationmark")
+                                .font(.headline)
+                                .foregroundStyle(.yellow)
+                                .padding(.top, 6)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 150, alignment: .leading)
+                        .padding(24)
+                        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22))
+                    }
+
+                    if page == .account {
+                        VStack(alignment: .leading, spacing: 14) {
+                            HStack(spacing: 20) {
+                                Label("Code Login", systemImage: "number.square")
+                                    .font(.title2.bold())
+                                    .foregroundStyle(.cyan)
+
+                                Spacer(minLength: 20)
+
+                                Button(codeLogin.isBusy ? "Cancel" :
+                                       codeLogin.phase == .expired ? "Get new code" : "Get TV code") {
+                                    if codeLogin.isBusy {
+                                        codeLogin.cancel()
+                                    } else {
+                                        codeLogin.requestCode()
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.cyan)
+                                .focused($codeButtonFocused)
+                            }
+
+                            Label(codeLogin.phase == .approved
+                                  ? "Account status: Code approved (beta)"
+                                  : "Account status: Not connected",
+                                  systemImage: codeLogin.phase == .approved
+                                    ? "checkmark.circle.fill" : "person.crop.circle.badge.exclamationmark")
+                                .font(.headline)
+                                .foregroundStyle(codeLogin.phase == .approved ? Color.green : Color.yellow)
+
+                            Text("Get a TV code, then approve it through MovieBox Pro on your phone.")
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+
+                            VStack(alignment: .leading, spacing: 10) {
                                 Text("Your Apple TV code")
                                     .font(.headline)
 
@@ -137,40 +159,23 @@ struct MovieBoxBetaView: View {
                                 case .idle:
                                     EmptyView()
                                 }
-
-                                HStack(spacing: 18) {
-                                    Button(codeLogin.phase == .expired ? "Get new code" : "Get TV code") {
-                                        codeLogin.requestCode()
-                                    }
-                                    .disabled(codeLogin.isBusy)
-                                    .buttonStyle(.borderedProminent)
-                                    .tint(.cyan)
-
-                                    if codeLogin.isBusy {
-                                        Button("Cancel") {
-                                            codeLogin.cancel()
-                                        }
-                                        .buttonStyle(.bordered)
-                                    }
-                                }
-
-                                Text("1. Open MovieBox Pro on your phone or the web and sign in.")
-                                Text("2. Choose Code Login from its account menu or settings.")
-                                Text("3. Enter the code shown on your Apple TV and confirm.")
-
-                                Text("Beta: Code Login uses the web flow. Approval does not yet enable the MovieBox catalog.")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, 8)
                             }
                             .font(.body)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(26)
+                            .padding(18)
                             .background(.black.opacity(0.2), in: RoundedRectangle(cornerRadius: 16))
+
+                            Text("On your phone: MovieBox Pro → Code Login → Enter this code → Confirm.")
+                                .font(.body)
+
+                            Text("Beta: Approval does not yet enable the MovieBox catalog or playback.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(32)
+                        .padding(24)
                         .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22))
+                        .focusSection()
                     }
 
                     Text("MovieBox web pairing is experimental. No MovieBox streaming is active.")
@@ -179,11 +184,12 @@ struct MovieBoxBetaView: View {
                 }
                 .frame(maxWidth: 1460, alignment: .leading)
                 .padding(.horizontal, 90)
-                .padding(.vertical, 64)
+                .padding(.vertical, 28)
             }
         }
         .onChange(of: page) { newPage in
             if newPage != .account { codeLogin.cancel() }
+            else { codeButtonFocused = true }
         }
         .onDisappear { codeLogin.cancel() }
     }
