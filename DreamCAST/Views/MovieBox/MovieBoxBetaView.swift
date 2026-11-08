@@ -48,6 +48,14 @@ struct MovieBoxBetaView: View {
         let message: String
     }
 
+    /// Use the same six-column poster geometry as the Plex shelves.
+    private var catalogColumns: [GridItem] {
+        Array(
+            repeating: GridItem(.fixed(MediaRowMetrics.poster.art.width), spacing: MediaRowMetrics.tileGap),
+            count: MediaRowMetrics.posterFullCount
+        )
+    }
+
     var body: some View {
         ZStack {
             Color(red: 0.045, green: 0.06, blue: 0.09)
@@ -213,8 +221,8 @@ struct MovieBoxBetaView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                .frame(maxWidth: 1460, alignment: .leading)
-                .padding(.horizontal, 90)
+                .frame(maxWidth: page == .movies || page == .series ? 1920 : 1460, alignment: .leading)
+                .padding(.horizontal, page == .movies || page == .series ? MediaRowMetrics.rowLeading : 90)
                 .padding(.vertical, 28)
             }
         }
@@ -267,8 +275,9 @@ struct MovieBoxBetaView: View {
 
             if !webMovies.movies.isEmpty {
                 LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible(), spacing: 24), count: 4),
-                    spacing: 28
+                    columns: catalogColumns,
+                    alignment: .leading,
+                    spacing: 32
                 ) {
                     ForEach(webMovies.movies) { movie in
                         Button {
@@ -290,7 +299,7 @@ struct MovieBoxBetaView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(24)
+        .padding(.vertical, 24)
         .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22))
         .focusSection()
     }
@@ -322,8 +331,9 @@ struct MovieBoxBetaView: View {
 
             if !webShows.shows.isEmpty {
                 LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible(), spacing: 24), count: 4),
-                    spacing: 28
+                    columns: catalogColumns,
+                    alignment: .leading,
+                    spacing: 32
                 ) {
                     ForEach(webShows.shows) { show in
                         Button {
@@ -345,7 +355,7 @@ struct MovieBoxBetaView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(24)
+        .padding(.vertical, 24)
         .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22))
         .focusSection()
     }
@@ -360,8 +370,7 @@ struct MovieBoxBetaView: View {
                         .overlay(Image(systemName: symbol).font(.system(size: 52)))
                 }
             }
-            .frame(height: 275)
-            .frame(maxWidth: .infinity)
+            .frame(width: MediaRowMetrics.poster.art.width, height: MediaRowMetrics.poster.art.height)
             .clipped()
             .background(.white.opacity(0.08))
             .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -369,9 +378,7 @@ struct MovieBoxBetaView: View {
             Text(title)
                 .font(.headline)
                 .lineLimit(2)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(width: MediaRowMetrics.poster.art.width, alignment: .leading)
         }
-        .padding(12)
-        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 18))
     }
 }
