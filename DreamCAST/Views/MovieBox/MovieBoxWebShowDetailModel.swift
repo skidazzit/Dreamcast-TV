@@ -74,6 +74,7 @@ final class MovieBoxWebShowDetailModel: ObservableObject {
                     id: previous.id,
                     title: result.title,
                     year: result.year ?? previous.year,
+                    firstAirDate: result.firstAirDate ?? previous.firstAirDate,
                     posterURL: result.posterURL ?? previous.posterURL,
                     synopsis: result.synopsis ?? previous.synopsis,
                     seasons: Array(Set(previous.seasons + result.seasons)).sorted(),
