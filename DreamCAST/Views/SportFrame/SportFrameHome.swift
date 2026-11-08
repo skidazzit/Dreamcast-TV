@@ -3,10 +3,13 @@ import SwiftUI
 struct SportFrameHome: View {
     let onTune: (UnifiedChannel) -> Void
     @StateObject private var fixtures = FixtureStore()
+    @StateObject private var catalog = SportFrameCatalog()
     @StateObject private var liveTV = LiveTVDataStore.shared
     @State private var tab = 0
-    @AppStorage("sportFrameSelectedSport") private var sport = "Soccer"
-    @AppStorage("sportFrameSelectedLeague") private var selectedLeague = "All Leagues"
+    @AppStorage("sportFrameFollowedSportsV2") private var followedSportsValue = "Soccer|Basketball|American Football"
+    @AppStorage("sportFrameSportOrderV2") private var sportOrderValue = "Soccer|Basketball|American Football|Tennis|Motorsport|Ice Hockey|Cricket"
+    @AppStorage("sportFrameLeagueSelectionsV2") private var leagueSelectionsValue = "{}"
+    @State private var expandedSport: String?
     @State private var dayOffset = 0
     @State private var selectedEvent: SportEvent?
     @State private var premiumKeyInput = ""
@@ -14,17 +17,66 @@ struct SportFrameHome: View {
     @State private var credentialRevision = 0
     @State private var credentialMessage: String?
 
-    private let sports = ["Soccer", "Basketball", "Ice Hockey", "American Football", "Tennis", "Motorsport", "Cricket"]
-    private let allLeagues = "All Leagues"
+    private let fallbackSports = ["Soccer", "Basketball", "American Football", "Tennis", "Motorsport", "Ice Hockey", "Cricket", "Baseball", "Rugby", "Golf"]
     private let accent = Color(red: 0.0, green: 0.8, blue: 0.94)
     private let panel = Color(red: 0.095, green: 0.11, blue: 0.15)
 
-    private var availableLeagues: [String] {
-        Array(Set(fixtures.events.map(\.league))).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    private var sportOrder: [String] {
+        let saved = sportOrderValue.split(separator: "|").map(String.init)
+        let names = saved + catalog.sports + fallbackSports
+        var seen = Set<String>()
+        return names.filter { seen.insert($0).inserted }
     }
 
-    private var visibleEvents: [SportEvent] {
-        selectedLeague == allLeagues ? fixtures.events : fixtures.events.filter { $0.league == selectedLeague }
+    private var followedSports: [String] {
+        let followed = Set(followedSportsValue.split(separator: "|").map(String.init))
+        return sportOrder.filter { followed.contains($0) }
+    }
+
+    private var leagueSelections: [String: [String]] {
+        guard let data = leagueSelectionsValue.data(using: .utf8) else { return [:] }
+        return (try? JSONDecoder().decode([String: [String]].self, from: data)) ?? [:]
+    }
+
+    private func matches(in sport: String) -> [SportEvent] {
+        let chosen = leagueSelections[sport]
+        return fixtures.events.filter { event in
+            guard fixtures.eventSports[event.idEvent] == sport else { return false }
+            return chosen.map { $0.contains(event.league) } ?? true
+        }
+    }
+
+    private func toggleSport(_ name: String) {
+        var selected = Set(followedSports)
+        if selected.contains(name) { selected.remove(name) } else { selected.insert(name) }
+        followedSportsValue = sportOrder.filter { selected.contains($0) }.joined(separator: "|")
+    }
+
+    private func moveSport(_ name: String, by step: Int) {
+        var ordered = sportOrder
+        guard let index = ordered.firstIndex(of: name), ordered.indices.contains(index + step) else { return }
+        ordered.swapAt(index, index + step)
+        sportOrderValue = ordered.joined(separator: "|")
+    }
+
+    private func toggleLeague(_ league: String, sport: String) {
+        var choices = leagueSelections
+        var selected = Set(choices[sport] ?? allLeagues(for: sport))
+        if selected.contains(league) { selected.remove(league) } else { selected.insert(league) }
+        choices[sport] = selected.sorted()
+        saveLeagueSelections(choices)
+    }
+
+    private func saveLeagueSelections(_ choices: [String: [String]]) {
+        if let data = try? JSONEncoder().encode(choices), let value = String(data: data, encoding: .utf8) {
+            leagueSelectionsValue = value
+        }
+    }
+
+    private func allLeagues(for sport: String) -> [String] {
+        let fromCatalog = catalog.leagues(for: sport).map(\.strLeague)
+        let fromMatches = fixtures.events.filter { fixtures.eventSports[$0.idEvent] == sport }.map(\.league)
+        return Array(Set(fromCatalog + fromMatches)).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
     var body: some View {
@@ -53,8 +105,11 @@ struct SportFrameHome: View {
                 .frame(maxWidth: 1900, alignment: .leading)
             }
         }
-        .task(id: "\(sport)-\(dayOffset)-\(credentialRevision)") {
-            await fixtures.fetch(sport: sport, date: Calendar.current.date(byAdding: .day, value: dayOffset, to: Date()) ?? Date())
+        .task(id: "\(followedSportsValue)-\(sportOrderValue)-\(dayOffset)-\(credentialRevision)") {
+            await fixtures.fetch(sports: followedSports, date: Calendar.current.date(byAdding: .day, value: dayOffset, to: Date()) ?? Date())
+        }
+        .task(id: credentialRevision) {
+            await catalog.refresh()
         }
         .sheet(item: $selectedEvent) { event in
             eventChannels(event)
@@ -74,9 +129,9 @@ struct SportFrameHome: View {
     private var matchesPage: some View {
         VStack(alignment: .leading, spacing: 26) {
             Text("Sports schedule").font(.largeTitle.bold())
-            Text("\(sport) · \(selectedLeague)")
+            Text("\(followedSports.count) sports followed · arranged in your chosen order")
                 .font(.title3).foregroundStyle(.secondary)
-            Button("Change sport or league in Setup") { tab = 2 }
+            Button("Choose sports and leagues in Setup") { tab = 2 }
                 .buttonStyle(.bordered)
             HStack(spacing: 18) {
                 ForEach(-1...3, id: \.self) { offset in
@@ -87,73 +142,127 @@ struct SportFrameHome: View {
                     .tint(dayOffset == offset ? accent : .gray)
                 }
             }
-            if fixtures.loading {
+            if followedSports.isEmpty {
+                emptyPanel("Choose at least one sport in Setup to see games.")
+            } else if fixtures.loading {
                 ProgressView("Loading matches…")
             } else if let error = fixtures.error {
                 Text(error).foregroundStyle(.orange)
             } else if fixtures.events.isEmpty {
-                emptyPanel("No events returned for this sport and day.")
+                emptyPanel("No events returned for the selected sports and day.")
             } else {
-                Text("\(visibleEvents.count) matches in \(selectedLeague)")
-                    .font(.caption).foregroundStyle(.secondary)
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 18), count: 3), spacing: 18) {
-                    ForEach(visibleEvents) { event in
-                        Button { selectedEvent = event } label: {
-                            VStack(alignment: .leading, spacing: 18) {
-                                HStack {
-                                    Text(event.league).font(.caption).foregroundStyle(accent)
-                                    Spacer()
-                                    Text(event.kickoff).font(.caption).foregroundStyle(.secondary)
-                                }
-                                teamRow(name: event.strHomeTeam ?? "Home", badge: event.homeBadge, score: event.intHomeScore)
-                                teamRow(name: event.strAwayTeam ?? "Away", badge: event.awayBadge, score: event.intAwayScore)
-                                Text("Find my channels").font(.caption.bold()).foregroundStyle(accent)
+                ForEach(followedSports, id: \.self) { sport in
+                    let sportMatches = matches(in: sport)
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(sport).font(.title.bold())
+                        Text("\(sportMatches.count) matches")
+                            .font(.caption).foregroundStyle(.secondary)
+                        if sportMatches.isEmpty {
+                            emptyPanel("No games found for the chosen leagues on this day.")
+                        } else {
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 18), count: 3), spacing: 18) {
+                                ForEach(sportMatches) { event in matchCard(event) }
                             }
-                            .padding(22)
-                            .frame(maxWidth: .infinity, minHeight: 210, alignment: .leading)
-                            .background(panel, in: RoundedRectangle(cornerRadius: 18))
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             }
         }
     }
 
+    private func matchCard(_ event: SportEvent) -> some View {
+        Button { selectedEvent = event } label: {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack {
+                    Text(event.league).font(.caption).foregroundStyle(accent)
+                    Spacer()
+                    Text(event.kickoff).font(.caption).foregroundStyle(.secondary)
+                }
+                teamRow(name: event.strHomeTeam ?? "Home", badge: event.homeBadge, score: event.intHomeScore)
+                teamRow(name: event.strAwayTeam ?? "Away", badge: event.awayBadge, score: event.intAwayScore)
+                Text("Find my channels").font(.caption.bold()).foregroundStyle(accent)
+            }
+            .padding(22)
+            .frame(maxWidth: .infinity, minHeight: 210, alignment: .leading)
+            .background(panel, in: RoundedRectangle(cornerRadius: 18))
+        }
+        .buttonStyle(.plain)
+    }
+
     private var sportLeagueSettings: some View {
         VStack(alignment: .leading, spacing: 22) {
-            Text("Sport and league").font(.largeTitle.bold())
-            Text("Choose a sport").font(.title3.bold())
-            ScrollView(.horizontal) {
-                HStack(spacing: 14) {
-                    ForEach(sports, id: \.self) { item in
-                        Button(item) { sport = item; selectedLeague = allLeagues }
-                            .buttonStyle(.bordered)
-                            .tint(sport == item ? accent : .gray)
-                    }
-                }
+            Text("Which sports do you follow?").font(.largeTitle.bold())
+            Text("Tick sports to follow. Use the arrows to set the order of sports on your Matches page.")
+                .foregroundStyle(.secondary)
+            HStack(spacing: 16) {
+                Button("Select all") { followedSportsValue = sportOrder.joined(separator: "|") }
+                Button("Unselect all") { followedSportsValue = "" }
             }
-            if !availableLeagues.isEmpty {
-                HStack {
-                    Text("League").font(.title3.bold())
-                    Menu {
-                        Button(allLeagues) { selectedLeague = allLeagues }
-                        ForEach(availableLeagues, id: \.self) { league in
-                            Button(league) { selectedLeague = league }
+            .buttonStyle(.bordered)
+            if let message = catalog.message {
+                Text(message).font(.caption).foregroundStyle(.orange)
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(sportOrder, id: \.self) { sport in
+                    HStack(spacing: 15) {
+                        Button { toggleSport(sport) } label: {
+                            Image(systemName: followedSports.contains(sport) ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(followedSports.contains(sport) ? .white : .gray)
+                            Text(sport).foregroundStyle(followedSports.contains(sport) ? .white : .gray)
+                            Spacer()
                         }
-                    } label: {
-                        Label(selectedLeague, systemImage: "chevron.down")
-                            .padding(.horizontal, 22)
-                            .padding(.vertical, 14)
+                        .buttonStyle(.plain)
+                        Button { expandedSport = expandedSport == sport ? nil : sport } label: {
+                            Image(systemName: expandedSport == sport ? "chevron.down" : "chevron.right")
+                        }
+                        .buttonStyle(.bordered)
+                        Button { moveSport(sport, by: -1) } label: {
+                            Image(systemName: "arrow.up")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(sportOrder.first == sport)
+                        Button { moveSport(sport, by: 1) } label: {
+                            Image(systemName: "arrow.down")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(sportOrder.last == sport)
                     }
-                    .buttonStyle(.bordered)
-                    .tint(accent)
-                    Spacer()
-                    Text("Leagues with matches on this day")
-                        .font(.caption).foregroundStyle(.secondary)
+                    .padding(.vertical, 15)
+                    if expandedSport == sport {
+                        let leagueNames = allLeagues(for: sport)
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Leagues in \(sport)")
+                                .font(.headline).foregroundStyle(accent)
+                            Button("Show every league") {
+                                var choices = leagueSelections
+                                choices.removeValue(forKey: sport)
+                                saveLeagueSelections(choices)
+                            }
+                            .buttonStyle(.bordered)
+                            if leagueNames.isEmpty {
+                                Text("No leagues returned. Premium access provides more league data.")
+                                    .foregroundStyle(.secondary)
+                            }
+                            ForEach(leagueNames, id: \.self) { league in
+                                Button { toggleLeague(league, sport: sport) } label: {
+                                    HStack {
+                                        Image(systemName: (leagueSelections[sport]?.contains(league) ?? true) ? "checkmark.circle.fill" : "circle")
+                                        Text(league)
+                                        Spacer()
+                                    }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.leading, 55)
+                        .padding(.bottom, 20)
+                    }
+                    Divider()
                 }
             }
-            Text("Your choices are saved for the next time you open SportFrame.")
+            .padding(24)
+            .background(panel, in: RoundedRectangle(cornerRadius: 20))
+            Text("Sports and leagues come from TheSportsDB. Free access returns fewer choices.")
                 .font(.footnote).foregroundStyle(.secondary)
         }
     }
