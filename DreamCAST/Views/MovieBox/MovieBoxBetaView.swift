@@ -11,6 +11,7 @@ struct MovieBoxBetaView: View {
         case movies = "Movies"
         case series = "TV Shows"
         case search = "Search"
+        case account = "Account"
 
         var id: String { rawValue }
 
@@ -20,6 +21,7 @@ struct MovieBoxBetaView: View {
             case .movies: "film"
             case .series: "tv"
             case .search: "magnifyingglass"
+            case .account: "person.crop.circle"
             }
         }
 
@@ -29,11 +31,40 @@ struct MovieBoxBetaView: View {
             case .movies: "Movie listings will appear after a supported account connection is ready."
             case .series: "TV shows and episodes will appear after a supported account connection is ready."
             case .search: "Search will be available after we verify the provider's request format."
+            case .account: "Choose how you want to connect your MovieBox Pro account."
+            }
+        }
+    }
+
+    private enum SignInMethod: String, CaseIterable, Identifiable {
+        case qrCode = "QR Code"
+        case google = "Google"
+        case email = "Email"
+
+        var id: String { rawValue }
+
+        var symbol: String {
+            switch self {
+            case .qrCode: "qrcode"
+            case .google: "person.crop.circle"
+            case .email: "envelope"
+            }
+        }
+
+        var explanation: String {
+            switch self {
+            case .qrCode:
+                "QR pairing will use a verified sign-in code from MovieBox Pro. No code is issued yet."
+            case .google:
+                "Google sign-in needs a verified account redirect. No login window is opened yet."
+            case .email:
+                "Email sign-in needs a secure provider flow. DreamCAST will not ask for your password here."
             }
         }
     }
 
     @State private var page: Page = .overview
+    @State private var signInMethod: SignInMethod?
 
     var body: some View {
         ZStack {
@@ -88,6 +119,34 @@ struct MovieBoxBetaView: View {
                     .frame(maxWidth: .infinity, minHeight: 190, alignment: .leading)
                     .padding(32)
                     .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22))
+
+                    if page == .account {
+                        VStack(alignment: .leading, spacing: 22) {
+                            Text("Sign-in options")
+                                .font(.title2.bold())
+
+                            HStack(spacing: 22) {
+                                ForEach(SignInMethod.allCases) { method in
+                                    Button {
+                                        signInMethod = method
+                                    } label: {
+                                        Label(method.rawValue, systemImage: method.symbol)
+                                            .font(.headline)
+                                            .frame(minWidth: 190, minHeight: 55)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .tint(signInMethod == method ? .cyan : .gray)
+                                }
+                            }
+
+                            Text(signInMethod?.explanation ?? "Pick a method to see how account sign-in will work.")
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(32)
+                        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22))
+                    }
 
                     Text("This beta screen is local only. No MovieBox sign-in or streaming is active.")
                         .font(.footnote)
