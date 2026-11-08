@@ -143,7 +143,6 @@ enum ShellSidebarModel {
         showDiscover: Bool,
         showWatchlist: Bool,
         showFavorites: Bool = false,
-        showMovieBox: Bool = false,
         order: [String] = defaultOrder,
         hiddenKeys: Set<String> = [],
         profileName: String,
@@ -176,9 +175,6 @@ enum ShellSidebarModel {
         }
         if !opensToLiveTV(hasMediaServer: hasMediaServer, liveTVSources: liveTVSources) {
             top.append(ShellSidebarItem(tab: .home, title: String(localized: "Home"), icon: "house.fill"))
-        }
-        if showMovieBox {
-            top.append(ShellSidebarItem(tab: .movieBox, title: "MovieBox Pro", icon: "play.tv.fill"))
         }
 
         let rows = arrangeableRows(libraries: libraries, liveTVSources: liveTVSources, combineLiveTV: combineLiveTV,

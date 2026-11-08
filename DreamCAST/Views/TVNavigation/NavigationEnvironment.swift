@@ -18,8 +18,6 @@ enum SidebarTab: Hashable {
     case account
     case search
     case home
-    /// MovieBox beta landing page. No account or network session is started here.
-    case movieBox
     case discover
     case watchlist
     case favorites
