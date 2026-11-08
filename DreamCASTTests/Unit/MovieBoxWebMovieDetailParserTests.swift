@@ -11,6 +11,7 @@ final class MovieBoxWebMovieDetailParserTests: XCTestCase {
           <img src="https://images.example.test/movie.jpg" class="cover" />
           <p class="movie_title"><span class="name">First &amp; Second</span></p>
           <span class="year">2026</span>
+          <meta itemprop="datePublished" content="2026-10-14" />
           <p style="font-size:18px;margin-top:30px;">A movie &amp; its story.</p>
         </div>
         <a play="mbpplay://example?private=NEVER_STORE_THIS">Play</a>
@@ -21,6 +22,7 @@ final class MovieBoxWebMovieDetailParserTests: XCTestCase {
         XCTAssertEqual(result.id, "12345")
         XCTAssertEqual(result.title, "First & Second")
         XCTAssertEqual(result.year, "2026")
+        XCTAssertEqual(result.releaseDate, "October 14, 2026")
         XCTAssertEqual(result.posterURL?.absoluteString, "https://images.example.test/movie.jpg")
         XCTAssertEqual(result.synopsis, "A movie & its story.")
         XCTAssertFalse(String(describing: result).contains("NEVER_STORE_THIS"))
