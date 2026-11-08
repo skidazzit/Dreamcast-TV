@@ -22,14 +22,14 @@ enum SportsDBAccess {
 final class FixtureStore: ObservableObject {
     @Published private(set) var events: [SportEvent] = []
     @Published private(set) var eventSports: [String: String] = [:]
-    @Published private(set) var liveEventIDs: Set<String> = []
     @Published private(set) var loading = false
     @Published private(set) var error: String?
 
-    func fetch(sports: [String], date: Date, quietly: Bool = false) async {
-        if !quietly { loading = true; error = nil }
-        defer { if !quietly { loading = false } }
-        guard !sports.isEmpty else { events = []; eventSports = [:]; liveEventIDs = []; return }
+    func fetch(sports: [String], date: Date) async {
+        loading = true
+        error = nil
+        defer { loading = false }
+        guard !sports.isEmpty else { events = []; eventSports = [:]; return }
         let day = DateFormatter()
         day.dateFormat = "yyyy-MM-dd"
         day.timeZone = .current
@@ -53,35 +53,10 @@ final class FixtureStore: ObservableObject {
             }
         }
         if Task.isCancelled { return }
-        let activeIDs = await premiumLiveEventIDs()
-        if Task.isCancelled { return }
         // One event may appear under multiple sport labels. Keep its first copy.
         var ids = Set<String>()
-        let refreshed = results.filter { ids.insert($0.idEvent).inserted }
-        // A failed background check must not erase the schedule already on screen.
-        if !quietly || failures < sports.count {
-            events = refreshed
-            eventSports = sportMap
-            liveEventIDs = activeIDs
-        }
-        if !quietly && failures > 0 { error = failures == sports.count ? "Could not load sports schedules." : nil }
-    }
-
-    private func premiumLiveEventIDs() async -> Set<String> {
-        guard SportsDBAccess.hasPremiumKey,
-              let url = URL(string: "https://www.thesportsdb.com/api/v2/json/livescore/all") else { return [] }
-        var request = URLRequest(url: url)
-        request.setValue(SportsDBAccess.apiKey, forHTTPHeaderField: "X_API_KEY")
-        do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard (response as? HTTPURLResponse)?.statusCode == 200,
-                  let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return [] }
-            let rows = payload.values.compactMap { $0 as? [[String: Any]] }.first ?? []
-            return Set(rows.compactMap { row -> String? in
-                if let id = row["idEvent"] as? String { return id }
-                if let id = row["idEvent"] as? Int { return String(id) }
-                return nil
-            })
-        } catch { return [] }
+        events = results.filter { ids.insert($0.idEvent).inserted }
+        eventSports = sportMap
+        if failures > 0 { error = failures == sports.count ? "Could not load sports schedules." : nil }
     }
 }
