@@ -21,6 +21,10 @@ working or approved API, and no requests were sent to MovieBox Pro.
 5. The binding flow calls `APIService.Device("Device_v3", ...)` and, after
    saving the account, signals `loginSuccess()`.
 
+The TV fragment gets its local device ID before asking for a code. Its
+`showCode()` starts periodic checks. The fragment stops its timer when the
+page pauses and starts it again when the page resumes.
+
 ## Retrofit method details
 
 | Client method | Declared route | Request fields |
@@ -34,6 +38,12 @@ URLs. The TV app builds a custom HTTP v2 client using
 `ApiV2RequestInterceptor` and `ApiEncryptV2`. Its endpoint configuration refers
 to `api_client_ssl_encrypt`. Therefore a plain `URLSession` request to
 `api/Add_captcha` has **not** been shown to work.
+
+The interceptor obtains app-held configuration through
+`NativeApiSecrets.withAppSecrets` and calls `ApiEncryptV2`. The
+`ApiV2Modules` list includes `Add_captcha` and `Login_captcha_v2` among
+the login modules. Endpoint names and form fields alone are not enough
+to build a working network client.
 
 ## Remaining checks before enabling sign-in
 
