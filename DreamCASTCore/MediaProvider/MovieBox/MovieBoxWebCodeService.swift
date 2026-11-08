@@ -182,6 +182,33 @@ actor MovieBoxWebCodeService: MovieBoxDeviceCodeService {
         return movies
     }
 
+    /// Loads read-only movie details from the matching web page.
+    func fetchMovieDetail(id: String) async throws -> MovieBoxWebMovieDetail {
+        guard MovieBoxWebSessionStore.load() != nil else {
+            throw MovieBoxWebCatalogError.noSavedSession
+        }
+        guard !id.isEmpty, id.count <= 20,
+              id.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }) else {
+            throw MovieBoxWebMovieDetailError.invalidMovieID
+        }
+
+        let detailURL = baseURL.appendingPathComponent("movie").appendingPathComponent(id)
+        var request = URLRequest(url: detailURL)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 20
+        request.setValue("text/html", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await session.data(for: request)
+        try checkResponse(response)
+        guard response.url?.path.hasPrefix("/movie/\(id)") == true else {
+            throw MovieBoxWebMovieDetailError.signInRequired
+        }
+        guard let html = String(data: data, encoding: .utf8) else {
+            throw MovieBoxWebMovieDetailError.missingTitle
+        }
+        return try MovieBoxWebMovieDetailParser.detail(from: html, id: id)
+    }
+
     /// Loads the first page of TV show cards. No episode or video requests.
     func fetchShows() async throws -> [MovieBoxWebShowCard] {
         guard MovieBoxWebSessionStore.load() != nil else {
