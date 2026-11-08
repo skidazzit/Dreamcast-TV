@@ -291,28 +291,45 @@ struct SportFrameHome: View {
             HStack(spacing: 9) {
                 Image(systemName: sportSymbol(sport))
                     .font(.headline).foregroundStyle(.white.opacity(0.85))
-                Text(title).font(.system(size: 20, weight: .semibold)).lineLimit(1)
+                Text(title)
+                    .font(.system(size: 20, weight: .semibold))
+                    .fixedSize(horizontal: false, vertical: true)
             }
             ForEach(events.prefix(5)) { event in
                 Button { selectedEvent = event } label: {
-                    HStack(spacing: 7) {
-                        sportBadge(event.homeBadge)
-                        Text(event.strHomeTeam ?? "Home").lineLimit(1)
-                        Spacer(minLength: 3)
-                        Text(event.intHomeScore.map { "\($0):\(event.intAwayScore ?? "–")" } ?? event.timeLabel)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Color(white: 0.66)).lineLimit(1)
-                        Spacer(minLength: 3)
-                        Text(event.strAwayTeam ?? "Away").lineLimit(1)
-                        sportBadge(event.awayBadge)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .top, spacing: 10) {
+                            sportBadge(event.homeBadge)
+                            Text(event.strHomeTeam ?? "Home")
+                                .fixedSize(horizontal: false, vertical: true)
+                                .layoutPriority(1)
+                            Spacer(minLength: 5)
+                            Text(event.intHomeScore ?? event.timeLabel)
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Color(white: 0.66))
+                        }
+                        HStack(alignment: .top, spacing: 10) {
+                            sportBadge(event.awayBadge)
+                            Text(event.strAwayTeam ?? "Away")
+                                .fixedSize(horizontal: false, vertical: true)
+                                .layoutPriority(1)
+                            Spacer(minLength: 5)
+                            if let awayScore = event.intAwayScore {
+                                Text(awayScore)
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .foregroundStyle(Color(white: 0.66))
+                            }
+                        }
                     }
                     .font(.system(size: 15))
+                    .padding(.vertical, 5)
                 }
                 .buttonStyle(.plain)
+                Divider().opacity(0.35)
             }
         }
-        .padding(17)
-        .frame(width: 370, height: 245, alignment: .topLeading)
+        .padding(20)
+        .frame(width: 430, alignment: .topLeading)
         .background(panel, in: RoundedRectangle(cornerRadius: 19))
     }
 
@@ -369,7 +386,9 @@ struct SportFrameHome: View {
                 .padding(13)
                 .frame(width: 330, height: 184)
                 .background(LinearGradient(colors: [Color(red: 0.08, green: 0.19, blue: 0.42), Color(red: 0.47, green: 0.08, blue: 0.17)], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 14))
-                Text(event.name).font(.system(size: 18, weight: .semibold)).lineLimit(2)
+                Text(event.name)
+                    .font(.system(size: 18, weight: .semibold))
+                    .fixedSize(horizontal: false, vertical: true)
                 let count = ChannelMatcher.matching(event, in: liveTV.channels).count
                 Text(count == 0 ? "Find channels" : "\(count) matching channels")
                     .font(.system(size: 15)).foregroundStyle(Color(white: 0.48))
