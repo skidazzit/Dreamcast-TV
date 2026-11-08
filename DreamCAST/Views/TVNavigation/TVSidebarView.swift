@@ -798,6 +798,8 @@ struct TVSidebarView: View {
                 Color.clear
             case .home:
                 PlexHomeRoot()
+            case .sportsHub:
+                SportsHubBetaView()
             case .providerLibrary:
                 // Unreachable: mounted directly as a UIKit VC above. Kept so
                 // this switch stays exhaustive over SidebarTab.
