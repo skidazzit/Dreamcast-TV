@@ -217,7 +217,9 @@ struct SportFrameHome: View {
 
     private var leagueSummarySection: some View {
         VStack(alignment: .leading, spacing: 72) {
-            ForEach(filteredSports, id: \.self) { sport in
+            ForEach(filteredSports.filter { sport in
+                filteredMatches.contains { fixtures.eventSports[$0.idEvent] == sport }
+            }, id: \.self) { sport in
                 leagueShelf(for: sport)
             }
         }
@@ -225,65 +227,25 @@ struct SportFrameHome: View {
 
     private func leagueShelf(for sport: String) -> some View {
         let sportMatches = filteredMatches.filter { fixtures.eventSports[$0.idEvent] == sport }
-        if sport.caseInsensitiveCompare("Basketball") == .orderedSame {
-            return AnyView(basketballShelf(events: sportMatches))
-        }
-        return AnyView(standardLeagueShelf(sport: sport, events: sportMatches))
+        return sportShelf(sport: sport, events: sportMatches)
     }
 
-    private func standardLeagueShelf(sport: String, events sportMatches: [SportEvent]) -> some View {
-        let leagues = Array(Set(sportMatches.map(\.league))).sorted()
-        return VStack(alignment: .leading, spacing: 19) {
-            if !leagues.isEmpty {
-                Text(sport).font(.system(size: 29, weight: .semibold)).foregroundStyle(Color(white: 0.7))
-            }
-            ScrollView(.horizontal) {
-                LazyHStack(alignment: .top, spacing: 18) {
-                    ForEach(leagues, id: \.self) { league in
-                        let events = sportMatches.filter { $0.league == league }
-                        VStack(alignment: .leading, spacing: 14) {
-                            Text(league).font(.headline.bold()).lineLimit(1)
-                            ForEach(events.prefix(5)) { event in
-                                Button { selectedEvent = event } label: {
-                                    HStack(spacing: 8) {
-                                        Text(event.strHomeTeam ?? "Home").lineLimit(1)
-                                        Spacer(minLength: 5)
-                                        Text(event.intHomeScore.map { "\($0)–\(event.intAwayScore ?? "–")" } ?? event.timeLabel)
-                                            .font(.caption.bold()).lineLimit(1)
-                                        Spacer(minLength: 5)
-                                        Text(event.strAwayTeam ?? "Away").lineLimit(1)
-                                    }
-                                    .font(.caption)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(22)
-                        .frame(width: 370, height: 245, alignment: .topLeading)
-                        .background(panel, in: RoundedRectangle(cornerRadius: 20))
-                    }
-                }
-                .padding(.vertical, 8)
-            }
-        }
-    }
-
-    private func basketballShelf(events: [SportEvent]) -> some View {
+    private func sportShelf(sport: String, events: [SportEvent]) -> some View {
         let leagues = Array(Set(events.map(\.league))).sorted { lhs, rhs in
-            let left = basketballLeagueRank(lhs)
-            let right = basketballLeagueRank(rhs)
+            let left = leagueRank(lhs, sport: sport)
+            let right = leagueRank(rhs, sport: sport)
             return left == right ? lhs.localizedStandardCompare(rhs) == .orderedAscending : left < right
         }
         return VStack(alignment: .leading, spacing: 20) {
             if !events.isEmpty {
-                Text("Basketball ›")
+                Text("\(sport) ›")
                     .font(.system(size: 29, weight: .semibold))
                     .foregroundStyle(Color(white: 0.7))
             }
             ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: 18) {
                     ForEach(leagues, id: \.self) { league in
-                        basketballLeagueCard(title: league, events: events.filter { $0.league == league })
+                        sportLeagueCard(title: league, sport: sport, events: events.filter { $0.league == league })
                     }
                 }
                 .padding(.vertical, 8)
@@ -299,7 +261,8 @@ struct SportFrameHome: View {
         }
     }
 
-    private func basketballLeagueRank(_ name: String) -> Int {
+    private func leagueRank(_ name: String, sport: String) -> Int {
+        guard sport.caseInsensitiveCompare("Basketball") == .orderedSame else { return 0 }
         let text = name.lowercased()
         if text == "nba" { return 0 }
         if text.contains("eastern conference") { return 1 }
@@ -308,17 +271,17 @@ struct SportFrameHome: View {
         return 4
     }
 
-    private func basketballLeagueCard(title: String, events: [SportEvent]) -> some View {
+    private func sportLeagueCard(title: String, sport: String, events: [SportEvent]) -> some View {
         VStack(alignment: .leading, spacing: 15) {
             HStack(spacing: 9) {
-                Image(systemName: "basketball.fill")
-                    .font(.headline).foregroundStyle(.orange)
+                Image(systemName: sportSymbol(sport))
+                    .font(.headline).foregroundStyle(.white.opacity(0.85))
                 Text(title).font(.system(size: 20, weight: .semibold)).lineLimit(1)
             }
             ForEach(events.prefix(5)) { event in
                 Button { selectedEvent = event } label: {
                     HStack(spacing: 7) {
-                        basketballBadge(event.homeBadge)
+                        sportBadge(event.homeBadge)
                         Text(event.strHomeTeam ?? "Home").lineLimit(1)
                         Spacer(minLength: 3)
                         Text(event.intHomeScore.map { "\($0):\(event.intAwayScore ?? "–")" } ?? event.timeLabel)
@@ -326,7 +289,7 @@ struct SportFrameHome: View {
                             .foregroundStyle(Color(white: 0.66)).lineLimit(1)
                         Spacer(minLength: 3)
                         Text(event.strAwayTeam ?? "Away").lineLimit(1)
-                        basketballBadge(event.awayBadge)
+                        sportBadge(event.awayBadge)
                     }
                     .font(.system(size: 15))
                 }
@@ -338,9 +301,21 @@ struct SportFrameHome: View {
         .background(panel, in: RoundedRectangle(cornerRadius: 19))
     }
 
-    private func basketballBadge(_ url: URL?) -> some View {
+    private func sportSymbol(_ sport: String) -> String {
+        switch sport.lowercased() {
+        case "soccer": return "soccerball"
+        case "basketball": return "basketball.fill"
+        case "american football": return "american.football.fill"
+        case "ice hockey": return "hockey.puck.fill"
+        case "baseball": return "baseball.fill"
+        case "tennis": return "tennis.racket"
+        default: return "sportscourt.fill"
+        }
+    }
+
+    private func sportBadge(_ url: URL?) -> some View {
         AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: {
-            Image(systemName: "basketball").foregroundStyle(.secondary)
+            Image(systemName: "shield.fill").foregroundStyle(.secondary)
         }
         .frame(width: 27, height: 27)
     }
