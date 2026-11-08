@@ -3,6 +3,7 @@
 import SwiftUI
 
 struct SportsHubBetaView: View {
+    let onTune: (UnifiedChannel) -> Void
     private enum Section: String, CaseIterable, Identifiable {
         case home = "Home"
         case channels = "Channels"
@@ -144,7 +145,10 @@ struct SportsHubBetaView: View {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 4), spacing: 16) {
                     ForEach(0..<min(upcoming.count, 16), id: \.self) { index in
                         let pair = upcoming[index]
-                        VStack(alignment: .leading, spacing: 12) {
+                        Button {
+                            onTune(pair.0)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 12) {
                             Text(pair.1.isLiveAiring ? "LIVE" : pair.1.startTime.formatted(date: .omitted, time: .shortened))
                                 .font(.caption.bold())
                                 .foregroundColor(pair.1.isLiveAiring ? .red : .gray)
@@ -158,6 +162,8 @@ struct SportsHubBetaView: View {
                         .frame(maxWidth: .infinity, minHeight: 110, alignment: .leading)
                         .padding(16)
                         .background(surface, in: RoundedRectangle(cornerRadius: 14))
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -191,6 +197,16 @@ struct SportsHubBetaView: View {
                 if board.games.isEmpty {
                     emptyShelf("No \(league.title) games in today's feed.", symbol: "sportscourt")
                 } else {
+                    let now = Date()
+                    let airing = GameMatcher.channels(
+                        airing: board.games,
+                        channels: liveTV.channels,
+                        current: { channel in
+                            liveTV.epg[channel.id]?.first(where: {
+                                $0.startTime <= now && $0.endTime > now
+                            })
+                        }
+                    )
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 3), spacing: 16) {
                         ForEach(board.games) { game in
                             VStack(alignment: .leading, spacing: 14) {
@@ -205,9 +221,20 @@ struct SportsHubBetaView: View {
                                     Spacer()
                                     Text(game.home.score.map { String($0) } ?? "–")
                                 }
-                                Text(game.network ?? "Network not listed")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                if let channel = airing[game.id] {
+                                    Button {
+                                        onTune(channel)
+                                    } label: {
+                                        Label("Watch on \(channel.name)", systemImage: "play.fill")
+                                            .font(.caption.bold())
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .tint(.green)
+                                } else {
+                                    Text(game.network ?? "Channel not matched")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                             }
                             .font(.headline)
                             .padding(20)
@@ -242,6 +269,9 @@ struct SportsHubBetaView: View {
     private func channelGrid(_ channels: [UnifiedChannel]) -> some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 5), spacing: 16) {
             ForEach(channels) { channel in
+                Button {
+                    onTune(channel)
+                } label: {
                 VStack(alignment: .leading, spacing: 12) {
                     AsyncImage(url: channel.logoURL) { image in
                         image.resizable().scaledToFit()
@@ -257,6 +287,8 @@ struct SportsHubBetaView: View {
                 .padding(16)
                 .frame(maxWidth: .infinity, minHeight: 160)
                 .background(surface, in: RoundedRectangle(cornerRadius: 16))
+                }
+                .buttonStyle(.plain)
             }
         }
     }
