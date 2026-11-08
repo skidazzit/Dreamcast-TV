@@ -363,8 +363,8 @@ struct SportFrameHome: View {
 
     private func matchCard(_ event: SportEvent) -> some View {
         let live = isLive(event)
-        return Button { selectedEvent = event } label: {
-            VStack(alignment: .leading, spacing: 9) {
+        return VStack(alignment: .leading, spacing: 9) {
+            Button { selectedEvent = event } label: {
                 VStack(alignment: .leading, spacing: 13) {
                     HStack {
                         Text(event.league).font(.caption.bold()).lineLimit(1)
@@ -395,23 +395,23 @@ struct SportFrameHome: View {
                 .padding(13)
                 .frame(width: 330, height: 184)
                 .background(LinearGradient(colors: [Color(red: 0.08, green: 0.19, blue: 0.42), Color(red: 0.47, green: 0.08, blue: 0.17)], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 14))
-                Text(event.name)
-                    .font(.system(size: 18, weight: .semibold))
-                    .fixedSize(horizontal: false, vertical: true)
-                let count = ChannelMatcher.matching(event, in: liveTV.channels).count
-                Text(count == 0 ? "Find channels" : "\(count) matching channels")
-                    .font(.system(size: 15)).foregroundStyle(Color(white: 0.48))
             }
-            .frame(width: 330, alignment: .topLeading)
+            .buttonStyle(SportFrameArtworkButtonStyle())
+            .focusEffectDisabled()
+            .focused($focusedCard, equals: "match-\(event.idEvent)")
+            .overlay {
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(focusedCard == "match-\(event.idEvent)" ? Color.white : Color.clear, lineWidth: 3)
+                    .allowsHitTesting(false)
+            }
+            Text(event.name)
+                .font(.system(size: 18, weight: .semibold))
+                .fixedSize(horizontal: false, vertical: true)
+            let count = ChannelMatcher.matching(event, in: liveTV.channels).count
+            Text(count == 0 ? "Find channels" : "\(count) matching channels")
+                .font(.system(size: 15)).foregroundStyle(Color(white: 0.48))
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .focused($focusedCard, equals: "match-\(event.idEvent)")
-        .overlay {
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(focusedCard == "match-\(event.idEvent)" ? Color.white : Color.clear, lineWidth: 3)
-                .allowsHitTesting(false)
-        }
+        .frame(width: 330, alignment: .topLeading)
     }
 
     private func matchBadge(_ url: URL?) -> some View {
@@ -677,5 +677,14 @@ struct SportFrameHome: View {
             .frame(maxWidth: .infinity, minHeight: 130, alignment: .leading)
             .padding(25)
             .background(panel, in: RoundedRectangle(cornerRadius: 16))
+    }
+}
+
+// A plain tvOS button can draw a large white focus plate over nearby titles.
+// This style leaves focus drawing to the artwork outline above.
+private struct SportFrameArtworkButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.99 : 1)
     }
 }
