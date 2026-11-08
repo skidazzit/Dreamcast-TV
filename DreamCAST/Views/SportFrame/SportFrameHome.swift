@@ -233,10 +233,17 @@ struct SportFrameHome: View {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("Leagues in \(sport)")
                                 .font(.headline).foregroundStyle(accent)
-                            Button("Show every league") {
-                                var choices = leagueSelections
-                                choices.removeValue(forKey: sport)
-                                saveLeagueSelections(choices)
+                            HStack(spacing: 16) {
+                                Button("Select all") {
+                                    var choices = leagueSelections
+                                    choices.removeValue(forKey: sport)
+                                    saveLeagueSelections(choices)
+                                }
+                                Button("Unselect all") {
+                                    var choices = leagueSelections
+                                    choices[sport] = []
+                                    saveLeagueSelections(choices)
+                                }
                             }
                             .buttonStyle(.bordered)
                             if leagueNames.isEmpty {
