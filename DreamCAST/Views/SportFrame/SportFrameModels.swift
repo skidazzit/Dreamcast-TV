@@ -36,20 +36,7 @@ struct SportEvent: Decodable, Identifiable {
 
     var isLive: Bool {
         let status = (strStatus ?? "").trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        let progress = (strProgress ?? "").trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        let finalCodes: Set<String> = ["FT", "AET", "AOT", "PEN", "AP", "AW", "AWD", "WO", "FINAL", "FINISHED", "NS", "TBD", "PST", "POST", "CANC", "CANCELLED", "ABD", "SUSP"]
-        if finalCodes.contains(status) || ["FINAL", "FINISHED", "FULL TIME"].contains(where: { progress.contains($0) }) { return false }
-        let inPlay: Set<String> = ["1H", "2H", "HT", "ET", "BT", "P", "PT", "Q1", "Q2", "Q3", "Q4", "OT", "IN1", "IN2", "IN3", "IN4", "IN5", "IN6", "IN7", "IN8", "IN9", "P1", "P2", "P3", "S1", "S2", "S3", "S4", "S5"]
-        if inPlay.contains(status) || status.hasPrefix("LIVE") || status.contains("IN PLAY") { return true }
-        if !progress.isEmpty && (progress.contains(":") || progress.contains("1ST") || progress.contains("2ND") || progress.contains("3RD") || progress.contains("4TH")) { return true }
-        // Some day-schedule feeds omit status. Infer only when scores exist
-        // and kickoff falls within a short, plausible in-play window.
-        guard status.isEmpty, progress.isEmpty,
-              intHomeScore != nil, intAwayScore != nil,
-              let startDate else { return false }
-        let elapsed = Date().timeIntervalSince(startDate)
-        let window: TimeInterval = strSport == "American Football" ? 4 * 3600 : 3 * 3600
-        return elapsed >= 0 && elapsed < window
+        return status == "LIVE" || status == "IN PLAY"
     }
 
     var isUpcoming: Bool { !isLive && (startDate.map { $0 > Date() } ?? false) }
