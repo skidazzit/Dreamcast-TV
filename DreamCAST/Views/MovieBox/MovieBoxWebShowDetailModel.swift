@@ -49,8 +49,46 @@ final class MovieBoxWebShowDetailModel: ObservableObject {
     }
 
     func selectSeason(_ number: Int) {
-        guard detail?.seasons.contains(number) == true else { return }
+        guard let previous = detail, previous.seasons.contains(number) else { return }
+        if !previous.episodes(in: number).isEmpty {
+            selectedSeason = number
+            return
+        }
+
+        // Fallback pages show one season at a time, so follow their season link.
+        cancel()
+        let currentGeneration = generation
         selectedSeason = number
+        phase = .loading
+        errorMessage = nil
+        loadTask = Task {
+            do {
+                let result = try await service.fetchShowDetail(id: previous.id, season: number)
+                try Task.checkCancellation()
+                guard currentGeneration == generation else { return }
+
+                let newSeasons = Set(result.episodes.map(\.season))
+                let mergedEpisodes = (previous.episodes.filter { !newSeasons.contains($0.season) }
+                    + result.episodes).sorted { ($0.season, $0.number) < ($1.season, $1.number) }
+                detail = MovieBoxWebShowDetail(
+                    id: previous.id,
+                    title: result.title,
+                    year: result.year ?? previous.year,
+                    posterURL: result.posterURL ?? previous.posterURL,
+                    synopsis: result.synopsis ?? previous.synopsis,
+                    seasons: Array(Set(previous.seasons + result.seasons)).sorted(),
+                    episodes: mergedEpisodes
+                )
+                phase = .loaded
+            } catch is CancellationError {
+                // The user left the show page.
+            } catch {
+                guard currentGeneration == generation else { return }
+                errorMessage = (error as? LocalizedError)?.errorDescription
+                    ?? "Could not load this season. Please try again."
+                phase = .failed
+            }
+        }
     }
 
     func cancel() {
