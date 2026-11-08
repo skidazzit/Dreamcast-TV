@@ -152,11 +152,19 @@ struct SportFrameHome: View {
                 Text(label)
             }
             .font(.system(size: 23, weight: tab == index ? .bold : .medium))
+            .foregroundStyle(.white)
             .padding(.horizontal, 27)
             .padding(.vertical, 12)
             .background(tab == index ? Color(white: 0.035) : Color.clear, in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(SportFrameArtworkButtonStyle())
+        .focusEffectDisabled()
+        .focused($focusedCard, equals: "nav-\(index)")
+        .overlay {
+            Capsule()
+                .stroke(focusedCard == "nav-\(index)" ? Color.white : Color.clear, lineWidth: 2)
+                .allowsHitTesting(false)
+        }
     }
 
     private var matchesPage: some View {
@@ -200,6 +208,9 @@ struct SportFrameHome: View {
             } else {
                 matchShelf("Happening now", events: filteredMatches.filter { isLive($0) })
                 matchShelf("Coming up", events: filteredMatches.filter { !isLive($0) && ($0.isUpcoming || $0.startDate == nil) })
+                if !filteredMatches.contains(where: { isLive($0) || $0.isUpcoming || $0.startDate == nil }) {
+                    matchShelf("Recent results", events: filteredMatches.filter { $0.intHomeScore != nil || $0.intAwayScore != nil })
+                }
                 leagueSummarySection
             }
         }
@@ -209,7 +220,9 @@ struct SportFrameHome: View {
         VStack(alignment: .leading, spacing: 18) {
             Text(title).font(.system(size: 29, weight: .semibold)).foregroundStyle(Color(white: 0.7))
             if events.isEmpty {
-                Text("No \(title.lowercased()) matches found.")
+                Text(title == "Happening now" ? "No matches marked live by the provider. Use Refresh to check again." :
+                     title == "Coming up" ? "No upcoming matches on this date. Choose +1d to see tomorrow's schedule." :
+                     "No \(title.lowercased()) matches found.")
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 12)
             } else {
