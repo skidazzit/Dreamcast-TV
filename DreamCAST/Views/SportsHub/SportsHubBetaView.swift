@@ -70,6 +70,9 @@ struct SportsHubBetaView: View {
 
     @State private var selectedDay = 1
     @State private var selectedLeague = "All leagues"
+    @State private var premiumKeyDraft = ""
+    @State private var premiumConfigured = false
+    @State private var premiumMessage: String?
 
     private let background = Color(red: 0.035, green: 0.038, blue: 0.045)
     private let surface = Color(red: 0.095, green: 0.1, blue: 0.115)
@@ -122,6 +125,7 @@ struct SportsHubBetaView: View {
         .onAppear {
             if scoreSubscription == nil { scoreSubscription = scorePoller.subscribe() }
             loadSportsDB()
+            premiumConfigured = SportsDBPremiumKeyStore.read() != nil
         }
         .onDisappear { scoreSubscription = nil }
         .onChange(of: selectedDay) { _, _ in loadSportsDB() }
@@ -654,6 +658,34 @@ struct SportsHubBetaView: View {
         }
     }
 
+    private func savePremiumKey() {
+        let candidate = premiumKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard candidate != "123", !candidate.isEmpty,
+              candidate.allSatisfy({ $0.isASCII && $0.isNumber }) else {
+            premiumMessage = "Enter your numeric Premium API key from TheSportsDB profile."
+            return
+        }
+        if SportsDBPremiumKeyStore.save(candidate) {
+            premiumConfigured = true
+            premiumKeyDraft = ""
+            premiumMessage = "Key saved on this device. Refreshing matches…"
+            sportsDB.load(date: chosenDate, forceRefresh: true)
+        } else {
+            premiumMessage = "Could not save the key on this device."
+        }
+    }
+
+    private func removePremiumKey() {
+        if SportsDBPremiumKeyStore.save(nil) {
+            premiumConfigured = false
+            premiumKeyDraft = ""
+            premiumMessage = "Premium key removed. Using the free feed."
+            sportsDB.load(date: chosenDate, forceRefresh: true)
+        } else {
+            premiumMessage = "Could not remove the key from this device."
+        }
+    }
+
     private var settingsContent: some View {
         VStack(alignment: .leading, spacing: 24) {
             Text("Sports Hub Settings").font(.title.bold())
@@ -664,8 +696,35 @@ struct SportsHubBetaView: View {
             }
             .padding(24)
             .background(surface, in: RoundedRectangle(cornerRadius: 16))
-            Text("Match schedules and artwork: TheSportsDB public feed. Some events and images may be missing.")
-                .font(.footnote).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 18) {
+                Text("TheSportsDB API").font(.title2.bold())
+                Text(premiumConfigured ? "Premium key saved on this device" : "Using free API")
+                    .foregroundColor(premiumConfigured ? .green : .gray)
+                SecureField("Premium API key", text: $premiumKeyDraft)
+                    .textContentType(.password)
+                HStack(spacing: 16) {
+                    Button("Save Premium key") { savePremiumKey() }
+                        .buttonStyle(.borderedProminent)
+                    if premiumConfigured {
+                        Button("Remove key") { removePremiumKey() }
+                            .buttonStyle(.bordered)
+                    }
+                    Button("Refresh matches") {
+                        sportsDB.load(date: chosenDate, forceRefresh: true)
+                        premiumMessage = "Refreshing the match feed…"
+                    }
+                    .buttonStyle(.bordered)
+                }
+                if let premiumMessage {
+                    Text(premiumMessage).font(.footnote).foregroundStyle(.secondary)
+                }
+                Text("Find your key in your TheSportsDB account profile. It stays in this device's Keychain.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                Text("Without a saved Premium key, schedules use the free feed.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            .padding(24)
+            .background(surface, in: RoundedRectangle(cornerRadius: 16))
         }
     }
 
