@@ -177,6 +177,8 @@ enum ShellSidebarModel {
             top.append(ShellSidebarItem(tab: .home, title: String(localized: "Home"), icon: "house.fill"))
         }
 
+        top.append(ShellSidebarItem(tab: .sportFrame, title: "SportFrame", icon: "sportscourt"))
+
         let rows = arrangeableRows(libraries: libraries, liveTVSources: liveTVSources, combineLiveTV: combineLiveTV,
                                    showDiscover: showDiscover && hasMediaServer,
                                    showWatchlist: showWatchlist && hasMediaServer,
