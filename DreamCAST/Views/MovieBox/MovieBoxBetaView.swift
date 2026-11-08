@@ -377,6 +377,11 @@ struct MovieBoxBetaView: View {
                                 .font(.title3)
                                 .foregroundStyle(.secondary)
                         }
+                        if let date = detail.releaseDate {
+                            Label("Release date: \\(date)", systemImage: "calendar")
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                        }
                         if let synopsis = detail.synopsis {
                             Text(synopsis)
                                 .font(.body)
@@ -491,6 +496,11 @@ struct MovieBoxBetaView: View {
                             .font(.largeTitle.bold())
                         if let year = detail.year {
                             Text(year)
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                        }
+                        if let date = detail.firstAirDate {
+                            Label("First aired: \\(date)", systemImage: "calendar")
                                 .font(.title3)
                                 .foregroundStyle(.secondary)
                         }
