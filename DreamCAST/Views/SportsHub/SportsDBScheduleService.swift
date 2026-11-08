@@ -8,6 +8,7 @@ nonisolated struct SportsDBEvent: Decodable, Identifiable, Sendable {
     let idEvent: String
     let strEvent: String?
     let strSport: String?
+    let idLeague: String?
     let strLeague: String?
     let strLeagueBadge: String?
     let idHomeTeam: String?
@@ -94,7 +95,8 @@ actor SportsDBScheduleClient {
         let events: [SportsDBEvent]
     }
     private var cache: [String: CacheEntry] = [:]
-    private var badgeCache: [String: URL?] = [:]
+    private var badgeCache: [String: URL] = [:]
+    private var missedBadges: Set<String> = []
     private let ttl: TimeInterval = 15 * 60
     func events(on date: Date, sport: String, forceRefresh: Bool = false) async throws -> [SportsDBEvent] {
         let formatter = DateFormatter()
@@ -129,24 +131,46 @@ actor SportsDBScheduleClient {
     }
 
     func teamBadge(id: String) async -> URL? {
-        if let cached = badgeCache[id] { return cached }
+        await badge(kind: "team", id: id)
+    }
+
+    func leagueBadge(id: String) async -> URL? {
+        await badge(kind: "league", id: id)
+    }
+
+    private func badge(kind: String, id: String) async -> URL? {
+        guard !id.isEmpty, id.allSatisfy({ $0.isNumber }) else { return nil }
+        let cacheKey = "\(kind):\(id)"
+        if let cached = badgeCache[cacheKey] { return cached }
+        if missedBadges.contains(cacheKey) { return nil }
         let apiKey = SportsDBPremiumKeyStore.read() ?? "123"
-        guard let url = URL(string: "https://www.thesportsdb.com/api/v1/json/\(apiKey)/lookupteam.php?id=\(id)") else { return nil }
+        let endpoint = kind == "league" ? "lookupleague.php" : "lookupteam.php"
+        guard let url = URL(string: "https://www.thesportsdb.com/api/v1/json/\(apiKey)/\(endpoint)?id=\(id)") else { return nil }
         var request = URLRequest(url: url)
         request.timeoutInterval = 10
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               (response as? HTTPURLResponse)?.statusCode == 200,
-              let result = try? JSONDecoder().decode(SportsDBTeamLookup.self, from: data),
-              let raw = result.teams?.first?.strBadge,
-              let badge = URL(string: raw), badge.scheme == "https" else { return nil }
-        badgeCache[id] = badge
+              let result = try? JSONDecoder().decode(SportsDBArtworkLookup.self, from: data) else { return nil }
+        let record = kind == "league" ? result.leagues?.first : result.teams?.first
+        guard let raw = [record?.strBadge, record?.strLeagueBadge, record?.strLogo]
+            .compactMap({ $0 }).first(where: { !$0.isEmpty }),
+              let badge = URL(string: raw), badge.scheme == "https" else {
+            missedBadges.insert(cacheKey)
+            return nil
+        }
+        badgeCache[cacheKey] = badge
         return badge
     }
 }
 
-private struct SportsDBTeamLookup: Decodable {
-    struct Team: Decodable { let strBadge: String? }
-    let teams: [Team]?
+private struct SportsDBArtworkLookup: Decodable {
+    struct Artwork: Decodable {
+        let strBadge: String?
+        let strLeagueBadge: String?
+        let strLogo: String?
+    }
+    let teams: [Artwork]?
+    let leagues: [Artwork]?
 }
 
 enum SportsDBScheduleError: Error {
