@@ -454,7 +454,8 @@ struct MovieBoxBetaView: View {
                                     Text("Season \(season)")
                                         .font(.headline)
                                         .lineLimit(1)
-                                        .frame(width: 160, height: 54)
+                                        .fixedSize(horizontal: true, vertical: false)
+                                        .frame(minWidth: 240, minHeight: 54)
                                 }
                                 .buttonStyle(.bordered)
                                 .tint(webShowDetail.selectedSeason == season ? .cyan : .gray)
