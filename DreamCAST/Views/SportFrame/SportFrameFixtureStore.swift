@@ -64,6 +64,14 @@ final class FixtureStore: ObservableObject {
         if failures > 0 { error = failures == sports.count ? "Could not load sports schedules." : nil }
     }
 
+    // Polling live status must not reset `loading` or rebuild the match shelves.
+    func refreshLive() async {
+        guard SportsDBAccess.hasPremiumKey else { return }
+        let current = await premiumLiveEventIDs()
+        guard !Task.isCancelled else { return }
+        if current != liveEventIDs { liveEventIDs = current }
+    }
+
     private func premiumLiveEventIDs() async -> Set<String> {
         guard SportsDBAccess.hasPremiumKey,
               let url = URL(string: "https://www.thesportsdb.com/api/v2/json/livescore/all") else { return [] }
