@@ -225,6 +225,13 @@ struct SportFrameHome: View {
 
     private func leagueShelf(for sport: String) -> some View {
         let sportMatches = filteredMatches.filter { fixtures.eventSports[$0.idEvent] == sport }
+        if sport.caseInsensitiveCompare("Basketball") == .orderedSame {
+            return AnyView(basketballShelf(events: sportMatches))
+        }
+        return AnyView(standardLeagueShelf(sport: sport, events: sportMatches))
+    }
+
+    private func standardLeagueShelf(sport: String, events sportMatches: [SportEvent]) -> some View {
         let leagues = Array(Set(sportMatches.map(\.league))).sorted()
         return VStack(alignment: .leading, spacing: 19) {
             if !leagues.isEmpty {
@@ -259,6 +266,83 @@ struct SportFrameHome: View {
                 .padding(.vertical, 8)
             }
         }
+    }
+
+    private func basketballShelf(events: [SportEvent]) -> some View {
+        let leagues = Array(Set(events.map(\.league))).sorted { lhs, rhs in
+            let left = basketballLeagueRank(lhs)
+            let right = basketballLeagueRank(rhs)
+            return left == right ? lhs.localizedStandardCompare(rhs) == .orderedAscending : left < right
+        }
+        return VStack(alignment: .leading, spacing: 20) {
+            if !events.isEmpty {
+                Text("Basketball ›")
+                    .font(.system(size: 29, weight: .semibold))
+                    .foregroundStyle(Color(white: 0.7))
+            }
+            ScrollView(.horizontal) {
+                LazyHStack(alignment: .top, spacing: 18) {
+                    ForEach(leagues, id: \.self) { league in
+                        basketballLeagueCard(title: league, events: events.filter { $0.league == league })
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+            if !events.isEmpty {
+                ScrollView(.horizontal) {
+                    LazyHStack(alignment: .top, spacing: 18) {
+                        ForEach(events) { event in matchCard(event) }
+                    }
+                    .padding(.vertical, 8)
+                }
+            }
+        }
+    }
+
+    private func basketballLeagueRank(_ name: String) -> Int {
+        let text = name.lowercased()
+        if text == "nba" { return 0 }
+        if text.contains("eastern conference") { return 1 }
+        if text.contains("western conference") { return 2 }
+        if text.contains("college") || text.contains("ncaa") { return 3 }
+        return 4
+    }
+
+    private func basketballLeagueCard(title: String, events: [SportEvent]) -> some View {
+        VStack(alignment: .leading, spacing: 15) {
+            HStack(spacing: 9) {
+                Image(systemName: "basketball.fill")
+                    .font(.headline).foregroundStyle(.orange)
+                Text(title).font(.system(size: 20, weight: .semibold)).lineLimit(1)
+            }
+            ForEach(events.prefix(5)) { event in
+                Button { selectedEvent = event } label: {
+                    HStack(spacing: 7) {
+                        basketballBadge(event.homeBadge)
+                        Text(event.strHomeTeam ?? "Home").lineLimit(1)
+                        Spacer(minLength: 3)
+                        Text(event.intHomeScore.map { "\($0):\(event.intAwayScore ?? "–")" } ?? event.timeLabel)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Color(white: 0.66)).lineLimit(1)
+                        Spacer(minLength: 3)
+                        Text(event.strAwayTeam ?? "Away").lineLimit(1)
+                        basketballBadge(event.awayBadge)
+                    }
+                    .font(.system(size: 15))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(17)
+        .frame(width: 370, height: 245, alignment: .topLeading)
+        .background(panel, in: RoundedRectangle(cornerRadius: 19))
+    }
+
+    private func basketballBadge(_ url: URL?) -> some View {
+        AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: {
+            Image(systemName: "basketball").foregroundStyle(.secondary)
+        }
+        .frame(width: 27, height: 27)
     }
 
     private func matchCard(_ event: SportEvent) -> some View {
