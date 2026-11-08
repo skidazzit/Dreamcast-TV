@@ -41,14 +41,28 @@ The Account page distinguishes **code approved** from **session saved**. A
 **Forget session** button removes the local Keychain record and clears the
 provider's cookies in the active URL session. This is not server-side revocation.
 
+## Read-only Movies pilot
+
+The user supplied an HTML response from `GET /movie` (`200 OK`, `text/html`).
+It contains movie cards with numeric `/movie/<id>` links, title attributes, and
+HTTPS poster URLs in CSS backgrounds. The sample page had 20 such cards. The
+response itself is **not** committed to the repository because it contains
+private account content.
+
+The beta Movies tab requests that page using the saved web session, parses
+only movie links, titles, and HTTPS posters, and displays focusable cards.
+The parser does not execute website scripts or extract profile data. Cards
+show a placeholder when opened because detail and playback APIs are not yet
+verified. It only loads the first page and does not paginate yet.
+
 ## Limits and test notes
 
 - The website may reject automated requests or change its HTML. This has not
   been tested against the live service in this environment.
 - Approval or Keychain storage is **not** proof the account session is valid.
-  The stored session has not yet been tested with an authenticated catalog
-  endpoint. We still need session validation, catalog access, account-level
-  sign-out or device revocation, and playback checks.
-- The pilot does not fetch or play MovieBox media.
+  The app-side Movies request still needs a live simulator test. We need
+  session validation, pagination, TV catalog, account-level sign-out or device
+  revocation, detail and playback checks.
+- The pilot does not fetch playable video or launch playback.
 - Live tests should use the user's own account. Never send login codes,
   cookies, tokens, or full unsanitized network captures in bug reports.
