@@ -426,7 +426,7 @@ struct SportsHubBetaView: View {
                             Button { presentSportsDBChannels(event) } label: {
                                 VStack(alignment: .leading, spacing: 14) {
                                     HStack(spacing: 10) {
-                                        sportsDBBadge(event.leagueBadge, size: 34)
+                                        SportsDBArtworkBadge(kind: .league, recordID: event.idLeague, provided: event.leagueBadge, size: 34)
                                         Text(event.league).font(.caption).lineLimit(1)
                                         Spacer()
                                         if let start = event.startTime {
@@ -435,7 +435,7 @@ struct SportsHubBetaView: View {
                                         }
                                     }
                                     HStack(spacing: 12) {
-                                        SportsDBTeamBadge(teamID: event.idHomeTeam, provided: event.homeBadge, size: 48)
+                                        SportsDBArtworkBadge(kind: .team, recordID: event.idHomeTeam, provided: event.homeBadge, size: 48)
                                         Text(event.strHomeTeam ?? "Home").lineLimit(2)
                                         Spacer(minLength: 8)
                                         if let score = event.intHomeScore {
@@ -443,7 +443,7 @@ struct SportsHubBetaView: View {
                                         }
                                     }
                                     HStack(spacing: 12) {
-                                        SportsDBTeamBadge(teamID: event.idAwayTeam, provided: event.awayBadge, size: 48)
+                                        SportsDBArtworkBadge(kind: .team, recordID: event.idAwayTeam, provided: event.awayBadge, size: 48)
                                         Text(event.strAwayTeam ?? "Away").lineLimit(2)
                                         Spacer(minLength: 8)
                                         if let score = event.intAwayScore {
@@ -466,16 +466,6 @@ struct SportsHubBetaView: View {
                 }
             }
         }
-    }
-
-    private func sportsDBBadge(_ url: URL?, size: CGFloat) -> some View {
-        AsyncImage(url: url) { image in
-            image.resizable().scaledToFit()
-        } placeholder: {
-            Image(systemName: "sportscourt")
-                .resizable().scaledToFit().foregroundStyle(.secondary)
-        }
-        .frame(width: size, height: size)
     }
 
     private var scoreLeague: League? {
@@ -803,25 +793,52 @@ struct SportsHubBetaView: View {
     }
 }
 
-private struct SportsDBTeamBadge: View {
-    let teamID: String?
+private struct SportsDBArtworkBadge: View {
+    enum Kind { case team, league }
+    let kind: Kind
+    let recordID: String?
     let provided: URL?
     let size: CGFloat
+
     @State private var fallback: URL?
+    @State private var attempted = false
 
     var body: some View {
-        AsyncImage(url: provided ?? fallback) { image in
-            image.resizable().scaledToFit()
-        } placeholder: {
-            Image(systemName: "sportscourt")
-                .resizable().scaledToFit().foregroundStyle(.secondary)
+        AsyncImage(url: fallback ?? provided) { phase in
+            switch phase {
+            case .success(let image):
+                image.resizable().scaledToFit()
+            case .failure:
+                placeholder
+                    .task { await recoverBadge() }
+            case .empty:
+                placeholder
+            @unknown default:
+                placeholder
+            }
         }
         .frame(width: size, height: size)
-        .task(id: teamID) {
+        .task(id: recordID) {
             fallback = nil
-            if provided == nil, let teamID {
-                fallback = await SportsDBScheduleClient.shared.teamBadge(id: teamID)
-            }
+            attempted = false
+            if provided == nil { await recoverBadge() }
+        }
+    }
+
+    private var placeholder: some View {
+        Image(systemName: kind == .team ? "shield" : "sportscourt")
+            .resizable().scaledToFit().foregroundStyle(.secondary)
+    }
+
+    @MainActor
+    private func recoverBadge() async {
+        guard !attempted, let recordID else { return }
+        attempted = true
+        switch kind {
+        case .team:
+            fallback = await SportsDBScheduleClient.shared.teamBadge(id: recordID)
+        case .league:
+            fallback = await SportsDBScheduleClient.shared.leagueBadge(id: recordID)
         }
     }
 }
