@@ -12,6 +12,7 @@ final class MovieBoxWebCodeLoginModel: ObservableObject {
         case requesting
         case awaitingApproval
         case approved
+        case sessionSaved
         case expired
         case failed
     }
@@ -19,12 +20,19 @@ final class MovieBoxWebCodeLoginModel: ObservableObject {
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var code: String?
     @Published private(set) var failureMessage: String?
+    @Published private(set) var hasSavedSession = false
+    @Published private(set) var isClearingSession = false
 
     private let service = MovieBoxWebCodeService()
     private var attempt: Task<Void, Never>?
     private var generation = 0
 
     var isBusy: Bool { phase == .requesting || phase == .awaitingApproval }
+
+    init() {
+        hasSavedSession = MovieBoxWebSessionStore.load() != nil
+        if hasSavedSession { phase = .sessionSaved }
+    }
 
     func requestCode() {
         cancel()
@@ -50,7 +58,9 @@ final class MovieBoxWebCodeLoginModel: ObservableObject {
 
                     if result == .approved {
                         code = nil
-                        phase = .approved
+                        hasSavedSession = await service.hasSavedSession()
+                        guard currentGeneration == generation else { return }
+                        phase = hasSavedSession ? .sessionSaved : .approved
                         return
                     }
                     if result == .expired { break }
@@ -65,7 +75,7 @@ final class MovieBoxWebCodeLoginModel: ObservableObject {
             } catch {
                 guard currentGeneration == generation else { return }
                 code = nil
-                failureMessage = (error as? MovieBoxWebCodeError)?.localizedDescription
+                failureMessage = (error as? LocalizedError)?.errorDescription
                     ?? "Could not contact MovieBox Pro. Check your network and try again."
                 phase = .failed
             }
@@ -78,7 +88,27 @@ final class MovieBoxWebCodeLoginModel: ObservableObject {
         attempt = nil
         if isBusy {
             code = nil
-            phase = .idle
+            phase = hasSavedSession ? .sessionSaved : .idle
+        }
+    }
+
+    func forgetSavedSession() {
+        guard !isClearingSession else { return }
+        cancel()
+        isClearingSession = true
+        Task {
+            do {
+                try await service.forgetSavedSession()
+                hasSavedSession = false
+                code = nil
+                failureMessage = nil
+                phase = .idle
+            } catch {
+                failureMessage = (error as? LocalizedError)?.errorDescription
+                    ?? "Could not forget the MovieBox session. Please try again."
+                phase = .failed
+            }
+            isClearingSession = false
         }
     }
 }
