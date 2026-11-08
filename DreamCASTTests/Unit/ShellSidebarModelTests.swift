@@ -35,6 +35,19 @@ final class ShellSidebarModelTests: XCTestCase {
         XCTAssertFalse(rows.contains { $0.key == SidebarArrangement.favorites })
     }
 
+    func test_movieBoxBetaRow_isOptInAndFollowsHome() {
+        func tabs(enabled: Bool) -> [SidebarTab] {
+            ShellSidebarModel.sections(
+                libraries: [], liveTVSources: [], combineLiveTV: true,
+                showDiscover: false, showWatchlist: false, showMovieBox: enabled,
+                profileName: "Tester")
+                .flatMap(\.items).map(\.tab)
+        }
+
+        XCTAssertEqual(tabs(enabled: true), [.account, .search, .home, .movieBox, .settings])
+        XCTAssertEqual(tabs(enabled: false), [.account, .search, .home, .settings])
+    }
+
     private func tabs(hasServer: Bool, liveTV: Bool, libraries: [PlexLibrary] = [],
                       playlistServers: [PlaylistServer] = []) -> [SidebarTab] {
         let source = LiveTVDataStore.LiveTVSourceInfo(
