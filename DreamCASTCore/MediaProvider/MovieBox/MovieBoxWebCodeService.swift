@@ -162,6 +162,26 @@ actor MovieBoxWebCodeService: MovieBoxDeviceCodeService {
         MovieBoxWebSessionStore.load() != nil
     }
 
+    /// Loads the website's first page of movie cards without playback requests.
+    func fetchMovies() async throws -> [MovieBoxWebMovieCard] {
+        guard MovieBoxWebSessionStore.load() != nil else {
+            throw MovieBoxWebCatalogError.noSavedSession
+        }
+        var request = URLRequest(url: baseURL.appendingPathComponent("movie"))
+        request.httpMethod = "GET"
+        request.timeoutInterval = 20
+        request.setValue("text/html", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await session.data(for: request)
+        try checkResponse(response)
+        guard let html = String(data: data, encoding: .utf8) else {
+            throw MovieBoxWebCatalogError.noMovieCards
+        }
+        let movies = try MovieBoxWebCatalogParser.movies(from: html)
+        guard !movies.isEmpty else { throw MovieBoxWebCatalogError.noMovieCards }
+        return movies
+    }
+
     func forgetSavedSession() throws {
         try MovieBoxWebSessionStore.clear()
         if let cookies = session.configuration.httpCookieStorage {
