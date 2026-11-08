@@ -139,8 +139,14 @@ struct SportsHubBetaView: View {
             premiumConfigured = SportsDBPremiumKeyStore.read() != nil
         }
         .onDisappear { scoreSubscription = nil }
-        .onChange(of: selectedDay) { _, _ in loadSportsDB() }
-        .onChange(of: sport) { _, _ in loadSportsDB() }
+        .onChange(of: selectedDay) { _, _ in
+            selectedLeague = "All leagues"
+            loadSportsDB()
+        }
+        .onChange(of: sport) { _, _ in
+            selectedLeague = "All leagues"
+            loadSportsDB()
+        }
         .sheet(item: $channelChoices) { choices in
             channelPicker(choices)
         }
@@ -371,6 +377,34 @@ struct SportsHubBetaView: View {
         }
     }
 
+    private var availableLeagues: [String] {
+        Array(Set(sportsDB.events.map(\.league)))
+            .filter { !$0.isEmpty && $0 != "Sport" }
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    private var leaguePicker: some View {
+        HStack(spacing: 18) {
+            Text("League").font(.headline)
+            Menu {
+                Button("All leagues") { selectedLeague = "All leagues" }
+                ForEach(availableLeagues, id: \.self) { league in
+                    Button(league) { selectedLeague = league }
+                }
+            } label: {
+                Label(selectedLeague, systemImage: "line.3.horizontal.decrease.circle")
+                    .font(.headline)
+                    .lineLimit(1)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 12)
+            }
+            .buttonStyle(.bordered)
+            Spacer()
+            Text("\(availableLeagues.count) leagues")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
     private var sportsDBSchedule: some View {
         Group {
             if sportsDB.isLoading {
@@ -378,11 +412,14 @@ struct SportsHubBetaView: View {
             } else if let error = sportsDB.errorMessage {
                 emptyShelf(error, symbol: "wifi.exclamationmark")
             } else {
-                let matches = sportsDB.events.filter { matchesSelectedSport($0) }
+                let matches = sportsDB.events.filter {
+                    matchesSelectedSport($0) && (selectedLeague == "All leagues" || $0.league == selectedLeague)
+                }
+                leaguePicker
                 if matches.isEmpty {
                     emptyShelf("No matches returned for this sport and date by TheSportsDB.", symbol: "calendar")
                 } else {
-                    Text("\(matches.count) matches returned for \(sport.rawValue)")
+                    Text("\(matches.count) matches in \(selectedLeague == "All leagues" ? sport.rawValue : selectedLeague)")
                         .font(.caption).foregroundStyle(.secondary)
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 3), spacing: 16) {
                         ForEach(Array(matches.prefix(24))) { event in
