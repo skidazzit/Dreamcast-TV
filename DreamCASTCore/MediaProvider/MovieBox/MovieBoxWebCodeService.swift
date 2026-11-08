@@ -202,6 +202,29 @@ actor MovieBoxWebCodeService: MovieBoxDeviceCodeService {
         return shows
     }
 
+    /// Reads a show's page and its embedded season list. Does not request video URLs.
+    func fetchShowDetail(id: String) async throws -> MovieBoxWebShowDetail {
+        guard MovieBoxWebSessionStore.load() != nil else {
+            throw MovieBoxWebCatalogError.noSavedSession
+        }
+        guard !id.isEmpty, id.count <= 20,
+              id.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }) else {
+            throw MovieBoxWebShowDetailError.invalidShowID
+        }
+
+        var request = URLRequest(url: baseURL.appendingPathComponent("tvshow/\(id)"))
+        request.httpMethod = "GET"
+        request.timeoutInterval = 20
+        request.setValue("text/html", forHTTPHeaderField: "Accept")
+
+        let (data, response) = try await session.data(for: request)
+        try checkResponse(response)
+        guard let html = String(data: data, encoding: .utf8) else {
+            throw MovieBoxWebShowDetailError.missingDetails
+        }
+        return try MovieBoxWebShowDetailParser.detail(from: html, id: id)
+    }
+
     func forgetSavedSession() throws {
         try MovieBoxWebSessionStore.clear()
         if let cookies = session.configuration.httpCookieStorage {
