@@ -12,6 +12,7 @@ struct SportFrameHome: View {
     @State private var expandedSport: String?
     @State private var expandedSettingsSection: String?
     @State private var dayOffset = 0
+    @State private var refreshRevision = 0
     @State private var matchSportFilter = "All Sports"
     @State private var matchLeagueFilter = "All Leagues"
     @State private var selectedEvent: SportEvent?
@@ -59,6 +60,10 @@ struct SportFrameHome: View {
         filteredSports.flatMap { sport in
             matches(in: sport).filter { matchLeagueFilter == allLeagueFilter || $0.league == matchLeagueFilter }
         }
+    }
+
+    private func isLive(_ event: SportEvent) -> Bool {
+        fixtures.liveEventIDs.contains(event.idEvent) || event.isLive
     }
 
     private var filterLeagues: [String] {
@@ -128,8 +133,16 @@ struct SportFrameHome: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .task(id: "\(followedSportsValue)-\(sportOrderValue)-\(dayOffset)-\(credentialRevision)") {
-            await fixtures.fetch(sports: followedSports, date: Calendar.current.date(byAdding: .day, value: dayOffset, to: Date()) ?? Date())
+        .task(id: "\(followedSportsValue)-\(sportOrderValue)-\(dayOffset)-\(credentialRevision)-\(refreshRevision)") {
+            repeat {
+                if Task.isCancelled { break }
+                await fixtures.fetch(sports: followedSports, date: Calendar.current.date(byAdding: .day, value: dayOffset, to: Date()) ?? Date())
+                if dayOffset != 0 { break }
+                // Keep current scores fresh while SportFrame is open, without
+                // exceeding free-tier limits for large sport lists.
+                let seconds: Double = followedSports.count > 15 ? 180 : 90
+                do { try await Task.sleep(for: .seconds(seconds)) } catch { break }
+            } while !Task.isCancelled
         }
         .task(id: credentialRevision) {
             await catalog.refresh()
@@ -178,6 +191,8 @@ struct SportFrameHome: View {
                     }
                 }
                 Spacer()
+                Button { refreshRevision += 1 } label: { Image(systemName: "arrow.clockwise") }
+                    .buttonStyle(.bordered)
                 Button { tab = 2 } label: { Image(systemName: "slider.horizontal.3") }
                     .buttonStyle(.bordered)
             }
@@ -190,8 +205,8 @@ struct SportFrameHome: View {
             } else if filteredMatches.isEmpty {
                 emptyPanel("No matches for these filters and date. Try All Sports or All Leagues.")
             } else {
-                matchShelf("Happening now", events: filteredMatches.filter(\.isLive))
-                matchShelf("Coming up", events: filteredMatches.filter { $0.isUpcoming || $0.startDate == nil && !$0.isLive })
+                matchShelf("Happening now", events: filteredMatches.filter { isLive($0) })
+                matchShelf("Coming up", events: filteredMatches.filter { !isLive($0) && ($0.isUpcoming || $0.startDate == nil) })
                 leagueSummarySection
             }
         }
@@ -321,16 +336,17 @@ struct SportFrameHome: View {
     }
 
     private func matchCard(_ event: SportEvent) -> some View {
-        Button { selectedEvent = event } label: {
+        let live = isLive(event)
+        return Button { selectedEvent = event } label: {
             VStack(alignment: .leading, spacing: 9) {
                 VStack(alignment: .leading, spacing: 13) {
                     HStack {
                         Text(event.league).font(.caption.bold()).lineLimit(1)
                         Spacer()
-                        Text(event.isLive ? "● LIVE" : event.isUpcoming ? "SOON" : event.startDate == nil ? "SCHEDULED" : "RESULT")
+                        Text(live ? "● LIVE" : event.isUpcoming ? "SOON" : event.startDate == nil ? "SCHEDULED" : "RESULT")
                             .font(.system(size: 15, weight: .bold))
                             .padding(.horizontal, 10).padding(.vertical, 5)
-                            .background(event.isLive ? Color.red : Color.blue, in: Capsule())
+                            .background(live ? Color.red : Color.blue, in: Capsule())
                     }
                     Spacer(minLength: 0)
                     HStack(spacing: 12) {
@@ -344,7 +360,7 @@ struct SportFrameHome: View {
                     Spacer(minLength: 0)
                     HStack {
                         Spacer()
-                        Text(event.isLive ? "LIVE" : event.timeLabel)
+                        Text(live ? "LIVE" : event.timeLabel)
                             .font(.caption.bold())
                             .padding(.horizontal, 9).padding(.vertical, 4)
                             .background(Color.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 7))
