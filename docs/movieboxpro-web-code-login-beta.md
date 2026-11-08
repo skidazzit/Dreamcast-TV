@@ -79,6 +79,16 @@ attributes, and any private URL schemes. The full HTML and account data are
 not committed. Episode selection only shows a message. No stream, download,
 or playback request is sent.
 
+## Detail-page compatibility fix
+
+After the first simulator test, show selection returned a generic missing-data
+message. The request now builds `/tvshow/<id>` as separate URL path segments
+and checks for a redirect to sign-in. The parser can read rendered `.tv_episode`
+cards when the embedded JSON is absent. In that case, selecting another season
+loads the site's `?season=<number>` page. Errors now distinguish login, missing
+title, and missing episode data without printing private response content.
+This fix still needs a simulator test.
+
 ## Limits and test notes
 
 - The website may reject automated requests or change its HTML. This has not
