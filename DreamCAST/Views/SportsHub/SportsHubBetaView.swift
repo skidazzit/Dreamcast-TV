@@ -53,6 +53,7 @@ struct SportsHubBetaView: View {
 
     @StateObject private var liveTV = LiveTVDataStore.shared
     @StateObject private var scorePoller = ScoreboardPoller.shared
+    @StateObject private var sportsDB = SportsDBScheduleModel()
     @State private var scoreSubscription: ScoreboardPoller.Subscription?
     @State private var section: Section = .home
     @State private var sport: Sport = .football
@@ -120,14 +121,57 @@ struct SportsHubBetaView: View {
         }
         .onAppear {
             if scoreSubscription == nil { scoreSubscription = scorePoller.subscribe() }
+            loadSportsDB()
         }
         .onDisappear { scoreSubscription = nil }
+        .onChange(of: selectedDay) { _, _ in loadSportsDB() }
         .sheet(item: $channelChoices) { choices in
             channelPicker(choices)
         }
     }
 
 
+
+    private var chosenDate: Date {
+        Calendar.current.date(byAdding: .day, value: selectedDay - 1, to: Date()) ?? Date()
+    }
+
+    private func loadSportsDB() {
+        sportsDB.load(date: chosenDate)
+    }
+
+    private func matchesSelectedSport(_ event: SportsDBEvent) -> Bool {
+        let name = event.sport.lowercased()
+        let league = event.league.lowercased()
+        switch sport {
+        case .football: return name == "soccer"
+        case .basketball: return name == "basketball"
+        case .tennis: return name == "tennis"
+        case .formulaOne: return name.contains("motor") || league.contains("formula")
+        case .hockey: return name == "ice hockey" || name == "hockey"
+        case .americanFootball: return name == "american football"
+        case .cricket: return name == "cricket"
+        }
+    }
+
+    private func presentSportsDBChannels(_ event: SportsDBEvent) {
+        let teamNames = [event.strHomeTeam, event.strAwayTeam]
+            .compactMap { $0?.lowercased() }
+            .filter { $0.count >= 4 }
+        let exact = liveTV.channels.filter { channel in
+            liveTV.epg[channel.id]?.contains(where: { program in
+                let title = [program.title, program.subtitle ?? ""].joined(separator: " ").lowercased()
+                guard !teamNames.isEmpty, teamNames.allSatisfy({ title.contains($0) }) else { return false }
+                guard let start = event.startTime else { return true }
+                return abs(program.eventStart.timeIntervalSince(start)) < 4 * 3600
+            }) == true
+        }
+        let used = Set(exact.map(\.id))
+        channelChoices = ChannelChoices(
+            title: event.title, exact: exact, possible: [],
+            other: sportsChannels(excluding: used)
+        )
+    }
 
     private func presentGameChannels(_ game: ScoreGame) {
         let exact = liveTV.channels.filter { channel in
@@ -311,6 +355,74 @@ struct SportsHubBetaView: View {
         }
     }
 
+    private var sportsDBSchedule: some View {
+        Group {
+            if sportsDB.isLoading {
+                ProgressView("Loading match schedule…")
+            } else if let error = sportsDB.errorMessage {
+                emptyShelf(error, symbol: "wifi.exclamationmark")
+            } else {
+                let matches = sportsDB.events.filter { matchesSelectedSport($0) }
+                if matches.isEmpty {
+                    emptyShelf("No matches returned for this sport and date by TheSportsDB free feed.", symbol: "calendar")
+                } else {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 3), spacing: 16) {
+                        ForEach(matches) { event in
+                            Button { presentSportsDBChannels(event) } label: {
+                                VStack(alignment: .leading, spacing: 14) {
+                                    HStack(spacing: 10) {
+                                        sportsDBBadge(event.leagueBadge, size: 34)
+                                        Text(event.league).font(.caption).lineLimit(1)
+                                        Spacer()
+                                        if let start = event.startTime {
+                                            Text(start, format: .dateTime.hour().minute())
+                                                .font(.caption).foregroundStyle(.secondary)
+                                        }
+                                    }
+                                    HStack(spacing: 12) {
+                                        sportsDBBadge(event.homeBadge, size: 48)
+                                        Text(event.strHomeTeam ?? "Home").lineLimit(2)
+                                        Spacer(minLength: 8)
+                                        if let score = event.intHomeScore {
+                                            Text(score).font(.title3.bold())
+                                        }
+                                    }
+                                    HStack(spacing: 12) {
+                                        sportsDBBadge(event.awayBadge, size: 48)
+                                        Text(event.strAwayTeam ?? "Away").lineLimit(2)
+                                        Spacer(minLength: 8)
+                                        if let score = event.intAwayScore {
+                                            Text(score).font(.title3.bold())
+                                        }
+                                    }
+                                    Text(event.strStatus ?? "Match details")
+                                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    Label("Choose channel", systemImage: "list.bullet")
+                                        .font(.caption.bold()).foregroundStyle(.cyan)
+                                }
+                                .font(.headline)
+                                .padding(20)
+                                .frame(maxWidth: .infinity, minHeight: 195, alignment: .leading)
+                                .background(surface, in: RoundedRectangle(cornerRadius: 16))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func sportsDBBadge(_ url: URL?, size: CGFloat) -> some View {
+        AsyncImage(url: url) { image in
+            image.resizable().scaledToFit()
+        } placeholder: {
+            Image(systemName: "sportscourt")
+                .resizable().scaledToFit().foregroundStyle(.secondary)
+        }
+        .frame(width: size, height: size)
+    }
+
     private var scoreLeague: League? {
         switch sport {
         case .basketball: .nba
@@ -471,10 +583,13 @@ struct SportsHubBetaView: View {
                 }
             }
             if sportTab == .watch {
-                emptyShelf("Live and upcoming \(sport.rawValue.lowercased()) events will appear here.", symbol: "play.rectangle")
+                datePicker
+                sportsDBSchedule
             } else if sportTab == .scores {
                 datePicker
                 scoreCards
+                Text("More match results from TheSportsDB").font(.title3.bold())
+                sportsDBSchedule
             } else {
                 emptyShelf("League tables and rankings will appear here.", symbol: "list.number")
             }
@@ -507,6 +622,9 @@ struct SportsHubBetaView: View {
             Text("Channels").font(.title.bold())
             datePicker
             liveEvents
+            Text("Match schedule").font(.title2.bold())
+            sportPicker
+            sportsDBSchedule
             Text("This view will add the Sportset-style sports filter and timeline.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -546,7 +664,8 @@ struct SportsHubBetaView: View {
             }
             .padding(24)
             .background(surface, in: RoundedRectangle(cornerRadius: 16))
-            emptyShelf("Sports scores and standings need a verified data provider.", symbol: "network")
+            Text("Match schedules and artwork: TheSportsDB public feed. Some events and images may be missing.")
+                .font(.footnote).foregroundStyle(.secondary)
         }
     }
 
