@@ -6,12 +6,22 @@ struct SportFrameHome: View {
     @StateObject private var liveTV = LiveTVDataStore.shared
     @State private var tab = 0
     @State private var sport = "Soccer"
+    @State private var selectedLeague = "All Leagues"
     @State private var dayOffset = 0
     @State private var selectedEvent: SportEvent?
 
     private let sports = ["Soccer", "Basketball", "Ice Hockey", "American Football", "Tennis", "Motorsport", "Cricket"]
+    private let allLeagues = "All Leagues"
     private let accent = Color(red: 0.0, green: 0.8, blue: 0.94)
     private let panel = Color(red: 0.095, green: 0.11, blue: 0.15)
+
+    private var availableLeagues: [String] {
+        Array(Set(fixtures.events.map(\.league))).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
+    private var visibleEvents: [SportEvent] {
+        selectedLeague == allLeagues ? fixtures.events : fixtures.events.filter { $0.league == selectedLeague }
+    }
 
     var body: some View {
         ZStack {
@@ -60,19 +70,41 @@ struct SportFrameHome: View {
     private var matchesPage: some View {
         VStack(alignment: .leading, spacing: 26) {
             Text("Sports schedule").font(.largeTitle.bold())
+            Text("Choose a sport").font(.title3.bold())
             ScrollView(.horizontal) {
                 HStack(spacing: 14) {
                     ForEach(sports, id: \.self) { item in
-                        Button(item) { sport = item }
+                        Button(item) { sport = item; selectedLeague = allLeagues }
                             .buttonStyle(.bordered)
                             .tint(sport == item ? accent : .gray)
                     }
+                }
+            }
+            if !availableLeagues.isEmpty {
+                HStack {
+                    Text("League").font(.title3.bold())
+                    Menu {
+                        Button(allLeagues) { selectedLeague = allLeagues }
+                        ForEach(availableLeagues, id: \.self) { league in
+                            Button(league) { selectedLeague = league }
+                        }
+                    } label: {
+                        Label(selectedLeague, systemImage: "chevron.down")
+                            .padding(.horizontal, 22)
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(accent)
+                    Spacer()
+                    Text("Leagues with matches on this day")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
             HStack(spacing: 18) {
                 ForEach(-1...3, id: \.self) { offset in
                     Button(offset == 0 ? "Today" : offset == -1 ? "Yesterday" : "Day +\(offset)") {
                         dayOffset = offset
+                        selectedLeague = allLeagues
                     }
                     .buttonStyle(.bordered)
                     .tint(dayOffset == offset ? accent : .gray)
@@ -85,10 +117,10 @@ struct SportFrameHome: View {
             } else if fixtures.events.isEmpty {
                 emptyPanel("No events returned for this sport and day.")
             } else {
-                Text("\(fixtures.events.count) events returned by TheSportsDB")
+                Text("\(visibleEvents.count) matches in \(selectedLeague)")
                     .font(.caption).foregroundStyle(.secondary)
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 18), count: 3), spacing: 18) {
-                    ForEach(fixtures.events) { event in
+                    ForEach(visibleEvents) { event in
                         Button { selectedEvent = event } label: {
                             VStack(alignment: .leading, spacing: 18) {
                                 HStack {
