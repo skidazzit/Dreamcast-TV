@@ -235,7 +235,7 @@ struct MovieBoxBetaView: View {
             }
             .id("\(page.rawValue)-\(activeMovie?.id ?? activeShow?.id ?? "grid")")
         }
-        .onChange(of: page) { newPage in
+        .onChange(of: page) { _, newPage in
             if newPage != .account { codeLogin.cancel() }
             else { codeButtonFocused = true }
             if newPage == .movies || newPage == .overview || newPage == .search {
@@ -350,7 +350,6 @@ struct MovieBoxBetaView: View {
         return VStack(alignment: .leading, spacing: 24) {
             Text("Search MovieBox Pro").font(.title.bold())
             TextField("Search titles", text: $searchQuery)
-                .textFieldStyle(.roundedBorder)
                 .frame(maxWidth: 760)
             Text("Search covers titles loaded from the current MovieBox web catalog pages.")
                 .font(.footnote)
