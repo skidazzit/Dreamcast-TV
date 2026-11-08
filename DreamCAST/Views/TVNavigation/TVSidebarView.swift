@@ -174,7 +174,7 @@ struct TVSidebarView: View {
         RootShellHost(
             selection: tabSelection,
             interactionBlocked: nestedNavState.isNested || nestedNavState.isSettingsSubPage,
-            pillSuppressed: isMusicLibrarySelected || isLiveTVSelected || isSearchSelected,
+            pillSuppressed: isMusicLibrarySelected || isLiveTVSelected || isSearchSelected || selectedTab == .movieBox,
             collapseRequest: sidebarCollapseRequest,
             profilePanelOpen: showProfileSwitcher,
             profileRowRequest: sidebarProfileRowRequest,
