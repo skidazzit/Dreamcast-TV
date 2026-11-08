@@ -36,7 +36,9 @@ struct SportEvent: Decodable, Identifiable {
 
     var isLive: Bool {
         let status = (strStatus ?? "").trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        return status == "LIVE" || status == "IN PLAY"
+        // Use the provider's explicit match period. Do not guess from the score.
+        let livePeriods: Set<String> = ["1H", "2H", "HT", "ET", "Q1", "Q2", "Q3", "Q4", "OT", "P1", "P2", "P3"]
+        return status == "LIVE" || status == "IN PLAY" || status.hasPrefix("LIVE ") || livePeriods.contains(status)
     }
 
     var isUpcoming: Bool { !isLive && (startDate.map { $0 > Date() } ?? false) }
