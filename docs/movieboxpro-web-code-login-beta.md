@@ -63,18 +63,30 @@ is not stored in the repository, as it may contain private account content.
 
 The TV Shows tab requests `GET /tvshow` with the saved session, then shows
 focusable cards. It shares the movie poster layout and loading controls.
-Selecting a show shows a placeholder. There is no season or episode access,
-pagination, playback, or download support in this pilot.
+Selecting a show now loads its read-only detail page, as described below.
+There is no pagination, playback, or download support in this pilot.
+
+## Read-only show details and episodes
+
+The user provided one show detail HTML response. The page contains a title,
+poster, year, synopsis, and an embedded `tv_season_list` JSON array. Its sample
+has two seasons and 25 episode entries. DreamCAST requests only the show page,
+reads the display fields, and lets the user switch seasons locally. It displays
+episode names, runtimes, and HTTPS thumbnails.
+
+The parser deliberately ignores watch progress, account fields, `play`
+attributes, and any private URL schemes. The full HTML and account data are
+not committed. Episode selection only shows a message. No stream, download,
+or playback request is sent.
 
 ## Limits and test notes
 
 - The website may reject automated requests or change its HTML. This has not
   been tested against the live service in this environment.
 - Approval or Keychain storage is **not** proof the account session is valid.
-  The movie grid has been tested in the user's simulator. The new TV Shows
-  grid still needs a live simulator test. We need session validation,
-  pagination, account-level sign-out or device revocation, detail and playback
-  checks.
+  The movie and TV grids have been tested in the user's simulator. Show detail
+  navigation still needs a live simulator test. We need session validation,
+  pagination, account-level sign-out or device revocation, and playback checks.
 - The pilot does not fetch playable video or launch playback.
 - Live tests should use the user's own account. Never send login codes,
   cookies, tokens, or full unsanitized network captures in bug reports.
