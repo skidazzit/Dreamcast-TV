@@ -18,6 +18,7 @@ nonisolated struct MovieBoxWebShowDetail: Sendable, Equatable {
     let id: String
     let title: String
     let year: String?
+    let firstAirDate: String?
     let posterURL: URL?
     let synopsis: String?
     let seasons: [Int]
@@ -126,6 +127,7 @@ nonisolated enum MovieBoxWebShowDetailParser {
             id: id,
             title: title,
             year: capture(yearPattern, from: html),
+            firstAirDate: fullDate(in: html),
             posterURL: httpsURL(capture(coverPattern, from: html)),
             synopsis: synopsis.flatMap { $0.isEmpty ? nil : $0 },
             seasons: seasonNumbers.sorted(),
@@ -176,6 +178,31 @@ nonisolated enum MovieBoxWebShowDetailParser {
         return Set(matches.compactMap { match in
             Range(match.range(at: 1), in: html).flatMap { Int(html[$0]) }
         }.filter { $0 >= 0 && $0 <= 100 })
+    }
+
+    private static let structuredDatePattern = #"(?i)(?:["'](?:released|release_date|first_air_date|air_date|datePublished)["']\s*[:=]\s*["']|\b(?:datePublished|releaseDate|firstAirDate)\s*=\s*["'])([0-9]{4}-[0-9]{2}-[0-9]{2})"#
+    private static let metaDatePattern = #"<meta\b[^>]*(?:itemprop|property|name)=["'](?:datePublished|release_date|first_air_date|air_date)["'][^>]*content=["']([0-9]{4}-[0-9]{2}-[0-9]{2})["']"#
+    private static let labeledDatePattern = #"(?i)(?:Release(?:d)?(?:\s+Date)?|First\s+Air(?:ed)?(?:\s+Date)?|Air\s+Date)\s*:?\s*(?:</[^>]+>\s*)?([0-9]{4}-[0-9]{2}-[0-9]{2})"#
+
+    private static func fullDate(in html: String) -> String? {
+        let candidate = capture(metaDatePattern, from: html)
+            ?? capture(structuredDatePattern, from: html)
+            ?? capture(labeledDatePattern, from: html)
+        guard let candidate else { return nil }
+        let parts = candidate.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3, (1...12).contains(parts[1]), (1...31).contains(parts[2]) else { return nil }
+        var components = DateComponents()
+        components.year = parts[0]
+        components.month = parts[1]
+        components.day = parts[2]
+        components.calendar = Calendar(identifier: .gregorian)
+        components.timeZone = TimeZone(secondsFromGMT: 0)
+        guard let date = components.date else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "MMMM d, yyyy"
+        return formatter.string(from: date)
     }
 
     private static func capture(_ pattern: String, from html: String) -> String? {
