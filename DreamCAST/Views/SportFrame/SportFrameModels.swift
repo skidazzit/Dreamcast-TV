@@ -28,7 +28,7 @@ enum ChannelMatcher {
         let normalized = text.lowercased().unicodeScalars.map {
             CharacterSet.alphanumerics.contains($0) ? String($0) : " "
         }
-        return String(normalized).split(separator: " ").joined(separator: " ")
+        return normalized.joined().split(separator: " ").joined(separator: " ")
     }
 
     static func matching(_ event: SportEvent, in channels: [UnifiedChannel]) -> [UnifiedChannel] {
