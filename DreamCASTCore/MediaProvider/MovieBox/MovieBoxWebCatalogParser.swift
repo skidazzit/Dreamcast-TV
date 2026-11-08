@@ -10,19 +10,45 @@ nonisolated struct MovieBoxWebMovieCard: Identifiable, Sendable, Equatable {
     let posterURL: URL?
 }
 
+/// A read-only show card from the website's TV catalog page.
+nonisolated struct MovieBoxWebShowCard: Identifiable, Sendable, Equatable {
+    let id: String
+    let title: String
+    let posterURL: URL?
+}
+
 nonisolated enum MovieBoxWebCatalogParser {
-    // The site renders movie links with titles and CSS poster backgrounds.
+    // Both catalogs render numeric links with titles and CSS poster backgrounds.
     // This parser does not interpret any embedded scripts or account data.
-    private static let cardPattern = #"<a\b([^>]*\bhref\s*=\s*["']/movie/([0-9]+)["'][^>]*)>([\s\S]*?)</a>"#
+    private static let moviePattern = #"<a\b([^>]*\bhref\s*=\s*["']/movie/([0-9]+)["'][^>]*)>([\s\S]*?)</a>"#
+    private static let showPattern = #"<a\b([^>]*\bhref\s*=\s*["']/tvshow/([0-9]+)["'][^>]*)>([\s\S]*?)</a>"#
     private static let titlePattern = #"\btitle\s*=\s*\"([^\"]+)\""#
     private static let posterPattern = #"background-image\s*:\s*url\(\s*["']?(https://[^'"\s\)]+)"#
 
     static func movies(from html: String) throws -> [MovieBoxWebMovieCard] {
-        let cardRegex = try NSRegularExpression(pattern: cardPattern, options: [.caseInsensitive])
+        try parseCards(from: html, pattern: moviePattern).map {
+            MovieBoxWebMovieCard(id: $0.id, title: $0.title, posterURL: $0.posterURL)
+        }
+    }
+
+    static func shows(from html: String) throws -> [MovieBoxWebShowCard] {
+        try parseCards(from: html, pattern: showPattern).map {
+            MovieBoxWebShowCard(id: $0.id, title: $0.title, posterURL: $0.posterURL)
+        }
+    }
+
+    private struct ParsedCard {
+        let id: String
+        let title: String
+        let posterURL: URL?
+    }
+
+    private static func parseCards(from html: String, pattern: String) throws -> [ParsedCard] {
+        let cardRegex = try NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
         let titleRegex = try NSRegularExpression(pattern: titlePattern, options: [.caseInsensitive])
         let posterRegex = try NSRegularExpression(pattern: posterPattern, options: [.caseInsensitive])
         let fullRange = NSRange(html.startIndex..<html.endIndex, in: html)
-        var cards: [MovieBoxWebMovieCard] = []
+        var cards: [ParsedCard] = []
         var seen: Set<String> = []
 
         for match in cardRegex.matches(in: html, range: fullRange).prefix(100) {
@@ -50,7 +76,7 @@ nonisolated enum MovieBoxWebCatalogParser {
                 posterURL = candidate
             }
 
-            cards.append(MovieBoxWebMovieCard(id: id, title: title, posterURL: posterURL))
+            cards.append(ParsedCard(id: id, title: title, posterURL: posterURL))
         }
         return cards
     }
@@ -68,6 +94,7 @@ nonisolated enum MovieBoxWebCatalogParser {
 nonisolated enum MovieBoxWebCatalogError: LocalizedError, Sendable {
     case noSavedSession
     case noMovieCards
+    case noShowCards
 
     var errorDescription: String? {
         switch self {
@@ -75,6 +102,8 @@ nonisolated enum MovieBoxWebCatalogError: LocalizedError, Sendable {
             "Sign in with a TV code before loading the MovieBox catalog."
         case .noMovieCards:
             "MovieBox Pro returned no movie cards. Your session may have expired, or the site may have changed."
+        case .noShowCards:
+            "MovieBox Pro returned no TV show cards. Your session may have expired, or the site may have changed."
         }
     }
 }
