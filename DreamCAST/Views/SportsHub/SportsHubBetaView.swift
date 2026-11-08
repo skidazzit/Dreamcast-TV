@@ -31,6 +31,17 @@ struct SportsHubBetaView: View {
         case americanFootball = "American football"
         case cricket = "Cricket"
         var id: Self { self }
+        var apiName: String {
+            switch self {
+            case .football: "Soccer"
+            case .basketball: "Basketball"
+            case .tennis: "Tennis"
+            case .formulaOne: "Motorsport"
+            case .hockey: "Ice Hockey"
+            case .americanFootball: "American Football"
+            case .cricket: "Cricket"
+            }
+        }
         var symbol: String {
             switch self {
             case .football: "soccerball"
@@ -129,6 +140,7 @@ struct SportsHubBetaView: View {
         }
         .onDisappear { scoreSubscription = nil }
         .onChange(of: selectedDay) { _, _ in loadSportsDB() }
+        .onChange(of: sport) { _, _ in loadSportsDB() }
         .sheet(item: $channelChoices) { choices in
             channelPicker(choices)
         }
@@ -141,7 +153,7 @@ struct SportsHubBetaView: View {
     }
 
     private func loadSportsDB() {
-        sportsDB.load(date: chosenDate)
+        sportsDB.load(date: chosenDate, sport: sport.apiName)
     }
 
     private func matchesSelectedSport(_ event: SportsDBEvent) -> Bool {
@@ -368,10 +380,12 @@ struct SportsHubBetaView: View {
             } else {
                 let matches = sportsDB.events.filter { matchesSelectedSport($0) }
                 if matches.isEmpty {
-                    emptyShelf("No matches returned for this sport and date by TheSportsDB free feed.", symbol: "calendar")
+                    emptyShelf("No matches returned for this sport and date by TheSportsDB.", symbol: "calendar")
                 } else {
+                    Text("\(matches.count) matches returned for \(sport.rawValue)")
+                        .font(.caption).foregroundStyle(.secondary)
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 3), spacing: 16) {
-                        ForEach(matches) { event in
+                        ForEach(Array(matches.prefix(24))) { event in
                             Button { presentSportsDBChannels(event) } label: {
                                 VStack(alignment: .leading, spacing: 14) {
                                     HStack(spacing: 10) {
@@ -384,7 +398,7 @@ struct SportsHubBetaView: View {
                                         }
                                     }
                                     HStack(spacing: 12) {
-                                        sportsDBBadge(event.homeBadge, size: 48)
+                                        SportsDBTeamBadge(teamID: event.idHomeTeam, provided: event.homeBadge, size: 48)
                                         Text(event.strHomeTeam ?? "Home").lineLimit(2)
                                         Spacer(minLength: 8)
                                         if let score = event.intHomeScore {
@@ -392,7 +406,7 @@ struct SportsHubBetaView: View {
                                         }
                                     }
                                     HStack(spacing: 12) {
-                                        sportsDBBadge(event.awayBadge, size: 48)
+                                        SportsDBTeamBadge(teamID: event.idAwayTeam, provided: event.awayBadge, size: 48)
                                         Text(event.strAwayTeam ?? "Away").lineLimit(2)
                                         Spacer(minLength: 8)
                                         if let score = event.intAwayScore {
@@ -669,7 +683,7 @@ struct SportsHubBetaView: View {
             premiumConfigured = true
             premiumKeyDraft = ""
             premiumMessage = "Key saved on this device. Refreshing matches…"
-            sportsDB.load(date: chosenDate, forceRefresh: true)
+            sportsDB.load(date: chosenDate, sport: sport.apiName, forceRefresh: true)
         } else {
             premiumMessage = "Could not save the key on this device."
         }
@@ -680,7 +694,7 @@ struct SportsHubBetaView: View {
             premiumConfigured = false
             premiumKeyDraft = ""
             premiumMessage = "Premium key removed. Using the free feed."
-            sportsDB.load(date: chosenDate, forceRefresh: true)
+            sportsDB.load(date: chosenDate, sport: sport.apiName, forceRefresh: true)
         } else {
             premiumMessage = "Could not remove the key from this device."
         }
@@ -710,7 +724,7 @@ struct SportsHubBetaView: View {
                             .buttonStyle(.bordered)
                     }
                     Button("Refresh matches") {
-                        sportsDB.load(date: chosenDate, forceRefresh: true)
+                        sportsDB.load(date: chosenDate, sport: sport.apiName, forceRefresh: true)
                         premiumMessage = "Refreshing the match feed…"
                     }
                     .buttonStyle(.bordered)
@@ -720,6 +734,11 @@ struct SportsHubBetaView: View {
                 }
                 Text("Find your key in your TheSportsDB account profile. It stays in this device's Keychain.")
                     .font(.footnote).foregroundStyle(.secondary)
+                Text("Last match query: \(sportsDB.loadedCount) events. The feed filters by \(sport.apiName).")
+                    .font(.footnote).foregroundStyle(.secondary)
+                if let error = sportsDB.errorMessage {
+                    Text(error).font(.footnote).foregroundColor(.orange)
+                }
                 Text("Without a saved Premium key, schedules use the free feed.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
@@ -743,6 +762,29 @@ struct SportsHubBetaView: View {
         VStack(alignment: .leading, spacing: 24) {
             Text(title).font(.title.bold())
             emptyShelf(description, symbol: symbol)
+        }
+    }
+}
+
+private struct SportsDBTeamBadge: View {
+    let teamID: String?
+    let provided: URL?
+    let size: CGFloat
+    @State private var fallback: URL?
+
+    var body: some View {
+        AsyncImage(url: provided ?? fallback) { image in
+            image.resizable().scaledToFit()
+        } placeholder: {
+            Image(systemName: "sportscourt")
+                .resizable().scaledToFit().foregroundStyle(.secondary)
+        }
+        .frame(width: size, height: size)
+        .task(id: teamID) {
+            fallback = nil
+            if provided == nil, let teamID {
+                fallback = await SportsDBScheduleClient.shared.teamBadge(id: teamID)
+            }
         }
     }
 }
