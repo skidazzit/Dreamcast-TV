@@ -102,7 +102,7 @@ struct MovieBoxBetaView: View {
                                 Spacer(minLength: 20)
 
                                 Button(codeLogin.isBusy ? "Cancel" :
-                                       (codeLogin.phase == .expired || codeLogin.phase == .approved)
+                                       (codeLogin.phase == .expired || codeLogin.phase == .approved || codeLogin.hasSavedSession)
                                         ? "Get new code" : "Get TV code") {
                                     if codeLogin.isBusy {
                                         codeLogin.cancel()
@@ -113,15 +113,26 @@ struct MovieBoxBetaView: View {
                                 .buttonStyle(.borderedProminent)
                                 .tint(.cyan)
                                 .focused($codeButtonFocused)
+                                .disabled(codeLogin.isClearingSession)
+
+                                if codeLogin.hasSavedSession {
+                                    Button("Forget session") {
+                                        codeLogin.forgetSavedSession()
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .disabled(codeLogin.isClearingSession)
+                                }
                             }
 
-                            Label(codeLogin.phase == .approved
-                                  ? "Account status: Code approved (beta)"
-                                  : "Account status: Not connected",
-                                  systemImage: codeLogin.phase == .approved
+                            Label(codeLogin.hasSavedSession
+                                  ? "Account status: Web session saved (not verified)"
+                                  : codeLogin.phase == .approved
+                                    ? "Account status: Code approved (no session saved)"
+                                    : "Account status: Not connected",
+                                  systemImage: codeLogin.hasSavedSession || codeLogin.phase == .approved
                                     ? "checkmark.circle.fill" : "person.crop.circle.badge.exclamationmark")
                                 .font(.headline)
-                                .foregroundStyle(codeLogin.phase == .approved ? Color.green : Color.yellow)
+                                .foregroundStyle(codeLogin.hasSavedSession ? Color.green : Color.yellow)
 
                             Text("Get a TV code, then approve it through MovieBox Pro on your phone.")
                                 .font(.body)
@@ -132,14 +143,15 @@ struct MovieBoxBetaView: View {
                                     .font(.headline)
 
                                 HStack(spacing: 16) {
-                                    Image(systemName: codeLogin.phase == .approved
+                                    Image(systemName: codeLogin.phase == .approved || codeLogin.hasSavedSession
                                           ? "checkmark.shield.fill" : "lock.shield")
-                                        .foregroundStyle(codeLogin.phase == .approved ? Color.green : Color.cyan)
+                                        .foregroundStyle(codeLogin.hasSavedSession ? Color.green : Color.cyan)
                                     if let code = codeLogin.code {
                                         Text(code)
                                             .font(.system(size: 48, weight: .bold, design: .monospaced))
                                     } else {
-                                        Text(codeLogin.phase == .approved ? "Approved" :
+                                        Text(codeLogin.hasSavedSession ? "Session saved" :
+                                             codeLogin.phase == .approved ? "Approved" :
                                              codeLogin.phase == .expired ? "Expired" : "Not issued")
                                             .font(.title2.bold())
                                     }
@@ -151,7 +163,10 @@ struct MovieBoxBetaView: View {
                                 case .awaitingApproval:
                                     ProgressView("Waiting for approval (up to 2 minutes)…")
                                 case .approved:
-                                    Label("Code approved. Account browsing is not connected yet.", systemImage: "checkmark.circle.fill")
+                                    Text("Code approved, but the website did not return a usable session.")
+                                        .foregroundStyle(.orange)
+                                case .sessionSaved:
+                                    Label("Session saved on this Apple TV. Account access is not verified yet.", systemImage: "checkmark.circle.fill")
                                         .foregroundStyle(.green)
                                 case .expired:
                                     Text("This code expired. Request a new one to try again.")
