@@ -498,6 +498,24 @@ struct MovieBoxBetaView: View {
                         Label("Release date: \(detail.releaseDate ?? "Not available from MovieBox Pro")", systemImage: "calendar")
                             .font(.title3)
                             .foregroundStyle(.secondary)
+                        HStack(spacing: 24) {
+                            if let runtime = detail.runtimeMinutes {
+                                Label("\(runtime) minutes", systemImage: "clock")
+                            }
+                            if let rating = detail.contentRating {
+                                Text(rating)
+                            }
+                            if let score = detail.imdbRating {
+                                Label("IMDb \(score)/10", systemImage: "star.fill")
+                            }
+                        }
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                        if !detail.genres.isEmpty {
+                            Text("Genres: \(detail.genres.joined(separator: ", "))")
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                        }
                         if let synopsis = detail.synopsis {
                             Text(synopsis)
                                 .font(.body)
