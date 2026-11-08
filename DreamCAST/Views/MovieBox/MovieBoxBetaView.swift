@@ -26,10 +26,10 @@ struct MovieBoxBetaView: View {
 
         var detail: String {
             switch self {
-            case .overview: "MovieBox Pro is not connected to DreamCAST yet."
+            case .overview: "Browse your MovieBox Pro catalog."
             case .movies: "Read-only listings from your saved MovieBox web session."
             case .series: "Read-only shows from your saved MovieBox web session."
-            case .search: "Search will be available after we verify the provider's request format."
+            case .search: "Search movies and shows in your loaded catalog."
             case .account: "Connect your MovieBox Pro account using a TV code."
             }
         }
@@ -45,6 +45,7 @@ struct MovieBoxBetaView: View {
     @State private var selectedCatalogItem: CatalogSelection?
     @State private var activeMovie: MovieBoxWebMovieCard?
     @State private var activeShow: MovieBoxWebShowCard?
+    @State private var searchQuery = ""
 
     private struct CatalogSelection: Identifiable {
         let id: String
@@ -114,22 +115,10 @@ struct MovieBoxBetaView: View {
                         } else {
                             showCatalog
                         }
-                    } else if page != .account {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text(page.rawValue)
-                                .font(.title.bold())
-                            Text(page.detail)
-                                .font(.title3)
-                                .foregroundStyle(.secondary)
-
-                            Label("Account status: Not connected", systemImage: "person.crop.circle.badge.exclamationmark")
-                                .font(.headline)
-                                .foregroundStyle(.yellow)
-                                .padding(.top, 6)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 150, alignment: .leading)
-                        .padding(24)
-                        .background(.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 22))
+                    } else if page == .overview {
+                        overviewCatalog
+                    } else if page == .search {
+                        searchCatalog
                     }
 
                     if page == .account {
@@ -249,18 +238,28 @@ struct MovieBoxBetaView: View {
         .onChange(of: page) { newPage in
             if newPage != .account { codeLogin.cancel() }
             else { codeButtonFocused = true }
-            if newPage == .movies { webMovies.load() }
-            else {
+            if newPage == .movies || newPage == .overview || newPage == .search {
+                if webMovies.movies.isEmpty { webMovies.load() }
+            } else {
                 webMovies.cancel()
+            }
+            if newPage == .series || newPage == .overview || newPage == .search {
+                if webShows.shows.isEmpty { webShows.load() }
+            } else {
+                webShows.cancel()
+            }
+            if newPage != .movies {
                 webMovieDetail.cancel()
                 activeMovie = nil
             }
-            if newPage == .series { webShows.load() }
-            else {
-                webShows.cancel()
+            if newPage != .series {
                 webShowDetail.cancel()
                 activeShow = nil
             }
+        }
+        .onAppear {
+            webMovies.load()
+            webShows.load()
         }
         .onDisappear {
             codeLogin.cancel()
@@ -276,6 +275,125 @@ struct MovieBoxBetaView: View {
                 dismissButton: .default(Text("OK"))
             )
         }
+    }
+
+
+    private var overviewCatalog: some View {
+        VStack(alignment: .leading, spacing: 28) {
+            HStack {
+                Text("Browse MovieBox Pro").font(.title.bold())
+                Spacer()
+                Button("Refresh catalogs") {
+                    webMovies.load()
+                    webShows.load()
+                }
+                .buttonStyle(.bordered)
+            }
+            Text("Catalog titles appear in website order. No trending or release ranking is claimed.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            if webMovies.phase == .loading || webShows.phase == .loading {
+                ProgressView("Loading catalogs…")
+            }
+            if let error = webMovies.errorMessage ?? webShows.errorMessage {
+                Text(error).foregroundStyle(.orange)
+            }
+            HStack {
+                Text("Movies").font(.title2.bold())
+                Text("\(webMovies.movies.count) loaded").foregroundStyle(.secondary)
+                Spacer()
+                Button("View all") { page = .movies }.buttonStyle(.bordered)
+            }
+            LazyVGrid(columns: catalogColumns, alignment: .leading, spacing: 24) {
+                ForEach(Array(webMovies.movies.prefix(6))) { movie in
+                    Button {
+                        activeMovie = movie
+                        page = .movies
+                        webMovieDetail.load(movieID: movie.id)
+                    } label: {
+                        catalogPoster(title: movie.title, posterURL: movie.posterURL, symbol: "film")
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            HStack {
+                Text("TV Shows").font(.title2.bold())
+                Text("\(webShows.shows.count) loaded").foregroundStyle(.secondary)
+                Spacer()
+                Button("View all") { page = .series }.buttonStyle(.bordered)
+            }
+            LazyVGrid(columns: catalogColumns, alignment: .leading, spacing: 24) {
+                ForEach(Array(webShows.shows.prefix(6))) { show in
+                    Button {
+                        activeShow = show
+                        page = .series
+                        webShowDetail.load(showID: show.id)
+                    } label: {
+                        catalogPoster(title: show.title, posterURL: show.posterURL, symbol: "tv")
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .focusSection()
+    }
+
+    private var searchCatalog: some View {
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let matchingMovies = query.isEmpty ? webMovies.movies : webMovies.movies.filter {
+            $0.title.localizedCaseInsensitiveContains(query)
+        }
+        let matchingShows = query.isEmpty ? webShows.shows : webShows.shows.filter {
+            $0.title.localizedCaseInsensitiveContains(query)
+        }
+        return VStack(alignment: .leading, spacing: 24) {
+            Text("Search MovieBox Pro").font(.title.bold())
+            TextField("Search titles", text: $searchQuery)
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 760)
+            Text("Search covers titles loaded from the current MovieBox web catalog pages.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            if webMovies.phase == .loading || webShows.phase == .loading {
+                ProgressView("Loading searchable titles…")
+            }
+            if let error = webMovies.errorMessage ?? webShows.errorMessage {
+                Text(error).foregroundStyle(.orange)
+            }
+            Text("Movies (\(matchingMovies.count))").font(.title2.bold())
+            LazyVGrid(columns: catalogColumns, alignment: .leading, spacing: 24) {
+                ForEach(matchingMovies) { movie in
+                    Button {
+                        activeMovie = movie
+                        page = .movies
+                        webMovieDetail.load(movieID: movie.id)
+                    } label: {
+                        catalogPoster(title: movie.title, posterURL: movie.posterURL, symbol: "film")
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Text("TV Shows (\(matchingShows.count))").font(.title2.bold())
+            LazyVGrid(columns: catalogColumns, alignment: .leading, spacing: 24) {
+                ForEach(matchingShows) { show in
+                    Button {
+                        activeShow = show
+                        page = .series
+                        webShowDetail.load(showID: show.id)
+                    } label: {
+                        catalogPoster(title: show.title, posterURL: show.posterURL, symbol: "tv")
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            if matchingMovies.isEmpty && matchingShows.isEmpty && !query.isEmpty {
+                Text("No matching titles in the loaded catalog.")
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .focusSection()
     }
 
     private var movieCatalog: some View {
