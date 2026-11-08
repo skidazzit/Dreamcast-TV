@@ -78,6 +78,7 @@ struct SportsHubBetaView: View {
         let exact: [UnifiedChannel]
         let possible: [UnifiedChannel]
         let other: [UnifiedChannel]
+        var nameMatches: [UnifiedChannel] = []
         var broadcastNames: [String] = []
         var lookupMessage: String? = nil
     }
@@ -198,6 +199,23 @@ struct SportsHubBetaView: View {
         }
     }
 
+    private func channelMatchesTeams(_ channel: UnifiedChannel, home: String?, away: String?) -> Bool {
+        guard let home, let away else { return false }
+        let local = normalizedChannelName(channel.name)
+        let ignored = Set(["united", "city", "football", "club", "sporting", "athletic", "real", "inter"])
+        func matchesTeam(_ team: String) -> Bool {
+            let normalized = normalizedChannelName(team)
+            guard !normalized.isEmpty else { return false }
+            if local.contains(normalized) { return true }
+            let significant = normalized.split(separator: " ").map { String($0) }
+                .filter { $0.count >= 5 && !ignored.contains($0) }
+            return significant.contains { token in
+                local.split(separator: " ").contains(Substring(token))
+            }
+        }
+        return matchesTeam(home) && matchesTeam(away)
+    }
+
     private func presentSportsDBChannels(_ event: SportsDBEvent) {
         let teamNames = [event.strHomeTeam, event.strAwayTeam]
             .compactMap { $0?.lowercased() }
@@ -210,9 +228,13 @@ struct SportsHubBetaView: View {
                 return abs(program.eventStart.timeIntervalSince(start)) < 4 * 3600
             }) == true
         }
+        let exactIDs = Set(exact.map(\.id))
+        let nameMatches = liveTV.channels.filter { channel in
+            !exactIDs.contains(channel.id) && channelMatchesTeams(channel, home: event.strHomeTeam, away: event.strAwayTeam)
+        }
         let requestID = UUID()
         channelChoices = ChannelChoices(id: requestID, title: event.title,
-                                        exact: exact, possible: [], other: [],
+                                        exact: exact, possible: [], other: [], nameMatches: nameMatches,
                                         lookupMessage: "Checking TheSportsDB TV broadcasts…")
         matchingBroadcasts = true
         Task {
@@ -225,16 +247,16 @@ struct SportsHubBetaView: View {
                     : "Matched TheSportsDB broadcasts against your Live TV playlist."
             } catch {
                 names = []
-                note = "TheSportsDB TV lookup failed. Showing EPG-confirmed channels only."
+                note = "TheSportsDB TV lookup failed. Showing EPG and channel-name matches."
             }
             guard channelChoices?.id == requestID else { return }
-            let exactIDs = Set(exact.map(\.id))
+            let usedIDs = exactIDs.union(nameMatches.map(\.id))
             let possible = liveTV.channels.filter { channel in
-                !exactIDs.contains(channel.id) && channelMatchesBroadcast(channel, names: names)
+                !usedIDs.contains(channel.id) && channelMatchesBroadcast(channel, names: names)
             }
             channelChoices = ChannelChoices(id: requestID, title: event.title,
                                             exact: exact, possible: possible, other: [],
-                                            broadcastNames: names, lookupMessage: note)
+                                            nameMatches: nameMatches, broadcastNames: names, lookupMessage: note)
             matchingBroadcasts = false
         }
     }
@@ -248,14 +270,23 @@ struct SportsHubBetaView: View {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
             .filter { $0.count >= 3 }
         let exactIDs = Set(exact.map(\.id))
+        let nameMatches = liveTV.channels.filter { channel in
+            !exactIDs.contains(channel.id) &&
+            channelMatchesTeams(channel, home: game.home.name, away: game.away.name)
+        }
+        let usedIDs = exactIDs.union(nameMatches.map(\.id))
         let possible = liveTV.channels.filter { channel in
-            guard !exactIDs.contains(channel.id) else { return false }
-            let name = channel.name.lowercased()
-            return networkNames.contains { name.contains($0) || $0.contains(name) }
+            guard !usedIDs.contains(channel.id) else { return false }
+            let name = normalizedChannelName(channel.name)
+            return networkNames.contains { network in
+                let expected = normalizedChannelName(network)
+                return expected.count >= 4 && (name == expected ||
+                    name.contains(expected) || expected.contains(name))
+            }
         }
         channelChoices = ChannelChoices(
             title: "\(game.away.name) vs \(game.home.name)",
-            exact: exact, possible: possible, other: []
+            exact: exact, possible: possible, other: [], nameMatches: nameMatches
         )
     }
 
@@ -299,12 +330,14 @@ struct SportsHubBetaView: View {
                         Text("Networks listed by TheSportsDB: " + choices.broadcastNames.joined(separator: ", "))
                             .font(.footnote).foregroundStyle(.secondary)
                     }
-                    if !matchingBroadcasts && choices.exact.isEmpty && choices.possible.isEmpty && choices.other.isEmpty {
+                    if !matchingBroadcasts && choices.exact.isEmpty && choices.nameMatches.isEmpty && choices.possible.isEmpty && choices.other.isEmpty {
                         Text("No matching channels were found in your Live TV playlists.")
                             .foregroundStyle(.secondary)
                     }
                     channelPickerGroup("EPG matches", channels: choices.exact,
                                        note: "These channels list the selected game in their guide.")
+                    channelPickerGroup("Channel-name matches", channels: choices.nameMatches,
+                                       note: "Both teams appear in the channel name. Confirm the stream before watching.")
                     channelPickerGroup("Broadcast network matches", channels: choices.possible,
                                        note: "These channel names match the game's reported networks.")
                     channelPickerGroup("Other sports channels", channels: choices.other,
