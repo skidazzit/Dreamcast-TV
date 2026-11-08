@@ -1,6 +1,23 @@
 import Foundation
 import Combine
 
+enum SportsDBAccess {
+    private static let keychainAccount = "sportFrameSportsDBPremiumKey"
+
+    static var hasPremiumKey: Bool { KeychainHelper.get(keychainAccount) != nil }
+    static var apiKey: String { KeychainHelper.get(keychainAccount) ?? "123" }
+
+    static func save(_ key: String) -> Bool {
+        let cleaned = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleaned.isEmpty, cleaned.unicodeScalars.allSatisfy({
+            CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789").contains($0)
+        }) else { return false }
+        return KeychainHelper.set(cleaned, forKey: keychainAccount)
+    }
+
+    static func remove() { KeychainHelper.delete(keychainAccount) }
+}
+
 @MainActor
 final class FixtureStore: ObservableObject {
     @Published private(set) var events: [SportEvent] = []
@@ -14,7 +31,7 @@ final class FixtureStore: ObservableObject {
         let day = DateFormatter()
         day.dateFormat = "yyyy-MM-dd"
         day.timeZone = .current
-        var parts = URLComponents(string: "https://www.thesportsdb.com/api/v1/json/123/eventsday.php")!
+        var parts = URLComponents(string: "https://www.thesportsdb.com/api/v1/json/\(SportsDBAccess.apiKey)/eventsday.php")!
         parts.queryItems = [URLQueryItem(name: "d", value: day.string(from: date)),
                             URLQueryItem(name: "s", value: sport)]
         guard let url = parts.url else { error = "Invalid schedule URL"; return }
