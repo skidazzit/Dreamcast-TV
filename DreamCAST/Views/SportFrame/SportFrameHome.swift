@@ -22,7 +22,7 @@ struct SportFrameHome: View {
 
     private let fallbackSports = ["Soccer", "Basketball", "American Football", "Tennis", "Motorsport", "Ice Hockey", "Cricket", "Baseball", "Rugby", "Golf"]
     private let accent = Color(red: 0.0, green: 0.8, blue: 0.94)
-    private let panel = Color(red: 0.095, green: 0.11, blue: 0.15)
+    private let panel = Color(white: 0.105)
     private let allSports = "All Sports"
     private let allLeagueFilter = "All Leagues"
 
@@ -101,19 +101,20 @@ struct SportFrameHome: View {
 
     var body: some View {
         ZStack {
-            Color(red: 0.025, green: 0.03, blue: 0.05).ignoresSafeArea()
+            Color.black.ignoresSafeArea()
             ScrollView {
-                VStack(alignment: .leading, spacing: 34) {
+                VStack(alignment: .leading, spacing: 52) {
                     HStack {
-                        Image(systemName: "sportscourt.fill").foregroundStyle(accent)
-                        Text("SPORTFRAME TV").font(.system(size: 34, weight: .black, design: .rounded))
                         Spacer()
-                        Text("DreamCAST sports").foregroundStyle(.secondary)
-                    }
-                    HStack(spacing: 16) {
-                        navigation("Matches", index: 0, symbol: "calendar")
-                        navigation("Channels", index: 1, symbol: "tv")
-                        navigation("Setup", index: 2, symbol: "gearshape")
+                        HStack(spacing: 6) {
+                            navigation("Sports", index: 0, symbol: "sportscourt")
+                            navigation("Channels", index: 1, symbol: "tv")
+                            navigation("Settings", index: 2, symbol: "gearshape")
+                        }
+                        .padding(6)
+                        .background(Color(white: 0.13), in: Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.13), lineWidth: 1))
+                        Spacer()
                     }
                     switch tab {
                     case 0: matchesPage
@@ -121,8 +122,10 @@ struct SportFrameHome: View {
                     default: setupPage
                     }
                 }
-                .padding(65)
-                .frame(maxWidth: 1900, alignment: .leading)
+                .padding(.horizontal, 28)
+                .padding(.top, 24)
+                .padding(.bottom, 90)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .task(id: "\(followedSportsValue)-\(sportOrderValue)-\(dayOffset)-\(credentialRevision)") {
@@ -138,26 +141,20 @@ struct SportFrameHome: View {
 
     private func navigation(_ label: String, index: Int, symbol: String) -> some View {
         Button { tab = index } label: {
-            Label(label, systemImage: symbol)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 14)
+            HStack(spacing: 9) {
+                if index == 2 { Image(systemName: symbol) }
+                Text(label)
+            }
+            .font(.system(size: 23, weight: tab == index ? .bold : .medium))
+            .padding(.horizontal, 27)
+            .padding(.vertical, 12)
+            .background(tab == index ? Color(white: 0.035) : Color.clear, in: Capsule())
         }
-        .buttonStyle(.bordered)
-        .tint(tab == index ? accent : .gray)
+        .buttonStyle(.plain)
     }
 
     private var matchesPage: some View {
-        VStack(alignment: .leading, spacing: 38) {
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 7) {
-                    Text("Sports").font(.system(size: 42, weight: .bold, design: .rounded))
-                    Text("Live games, upcoming fixtures, and league scores")
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button { tab = 2 } label: { Label("Manage sports", systemImage: "slider.horizontal.3") }
-                    .buttonStyle(.bordered)
-            }
+        VStack(alignment: .leading, spacing: 74) {
             HStack(spacing: 16) {
                 Menu {
                     Button(allSports) { matchSportFilter = allSports; matchLeagueFilter = allLeagueFilter }
@@ -181,6 +178,8 @@ struct SportFrameHome: View {
                     }
                 }
                 Spacer()
+                Button { tab = 2 } label: { Image(systemName: "slider.horizontal.3") }
+                    .buttonStyle(.bordered)
             }
             if followedSports.isEmpty {
                 emptyPanel("Select sports in Setup to see matches.")
@@ -199,15 +198,15 @@ struct SportFrameHome: View {
     }
 
     private func matchShelf(_ title: String, events: [SportEvent]) -> some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text(title).font(.title.bold())
+        VStack(alignment: .leading, spacing: 18) {
+            Text(title).font(.system(size: 29, weight: .semibold)).foregroundStyle(Color(white: 0.7))
             if events.isEmpty {
                 Text("No \(title.lowercased()) matches found.")
                     .foregroundStyle(.secondary)
                     .padding(.vertical, 12)
             } else {
                 ScrollView(.horizontal) {
-                    LazyHStack(alignment: .top, spacing: 22) {
+                    LazyHStack(alignment: .top, spacing: 18) {
                         ForEach(events) { event in matchCard(event) }
                     }
                     .padding(.vertical, 8)
@@ -217,7 +216,7 @@ struct SportFrameHome: View {
     }
 
     private var leagueSummarySection: some View {
-        VStack(alignment: .leading, spacing: 32) {
+        VStack(alignment: .leading, spacing: 72) {
             ForEach(filteredSports, id: \.self) { sport in
                 leagueShelf(for: sport)
             }
@@ -227,9 +226,9 @@ struct SportFrameHome: View {
     private func leagueShelf(for sport: String) -> some View {
         let sportMatches = filteredMatches.filter { fixtures.eventSports[$0.idEvent] == sport }
         let leagues = Array(Set(sportMatches.map(\.league))).sorted()
-        return VStack(alignment: .leading, spacing: 18) {
+        return VStack(alignment: .leading, spacing: 19) {
             if !leagues.isEmpty {
-                Text(sport).font(.title.bold())
+                Text(sport).font(.system(size: 29, weight: .semibold)).foregroundStyle(Color(white: 0.7))
             }
             ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: 18) {
@@ -253,7 +252,7 @@ struct SportFrameHome: View {
                             }
                         }
                         .padding(22)
-                        .frame(width: 360, height: 240, alignment: .topLeading)
+                        .frame(width: 370, height: 245, alignment: .topLeading)
                         .background(panel, in: RoundedRectangle(cornerRadius: 20))
                     }
                 }
@@ -264,33 +263,43 @@ struct SportFrameHome: View {
 
     private func matchCard(_ event: SportEvent) -> some View {
         Button { selectedEvent = event } label: {
-            VStack(alignment: .leading, spacing: 11) {
-                HStack {
-                    Text(event.league).font(.caption.bold()).lineLimit(1)
-                    Spacer()
-                    Text(event.isLive ? "● LIVE" : event.isUpcoming ? "SOON" : event.startDate == nil ? "SCHEDULED" : "RESULT")
-                        .font(.caption.bold())
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(event.isLive ? Color.red : Color.blue, in: Capsule())
-                }
-                Spacer(minLength: 0)
-                HStack(spacing: 12) {
-                    matchBadge(event.homeBadge)
+            VStack(alignment: .leading, spacing: 9) {
+                VStack(alignment: .leading, spacing: 13) {
+                    HStack {
+                        Text(event.league).font(.caption.bold()).lineLimit(1)
+                        Spacer()
+                        Text(event.isLive ? "● LIVE" : event.isUpcoming ? "SOON" : event.startDate == nil ? "SCHEDULED" : "RESULT")
+                            .font(.system(size: 15, weight: .bold))
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(event.isLive ? Color.red : Color.blue, in: Capsule())
+                    }
                     Spacer(minLength: 0)
-                    Text(event.intHomeScore.map { "\($0) – \(event.intAwayScore ?? "–")" } ?? event.timeLabel)
-                        .font(.title2.bold()).lineLimit(1).minimumScaleFactor(0.7)
+                    HStack(spacing: 12) {
+                        matchBadge(event.homeBadge)
+                        Spacer(minLength: 0)
+                        Text(event.intHomeScore.map { "\($0) – \(event.intAwayScore ?? "–")" } ?? event.timeLabel)
+                            .font(.system(size: 27, weight: .bold)).lineLimit(1).minimumScaleFactor(0.7)
+                        Spacer(minLength: 0)
+                        matchBadge(event.awayBadge)
+                    }
                     Spacer(minLength: 0)
-                    matchBadge(event.awayBadge)
+                    HStack {
+                        Spacer()
+                        Text(event.isLive ? "LIVE" : event.timeLabel)
+                            .font(.caption.bold())
+                            .padding(.horizontal, 9).padding(.vertical, 4)
+                            .background(Color.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 7))
+                    }
                 }
-                Spacer(minLength: 0)
-                Text(event.name).font(.subheadline.bold()).lineLimit(2)
+                .padding(13)
+                .frame(width: 330, height: 184)
+                .background(LinearGradient(colors: [Color(red: 0.08, green: 0.19, blue: 0.42), Color(red: 0.47, green: 0.08, blue: 0.17)], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 14))
+                Text(event.name).font(.system(size: 18, weight: .semibold)).lineLimit(2)
                 let count = ChannelMatcher.matching(event, in: liveTV.channels).count
                 Text(count == 0 ? "Find channels" : "\(count) matching channels")
-                    .font(.caption).foregroundStyle(.white.opacity(0.8))
+                    .font(.system(size: 15)).foregroundStyle(Color(white: 0.48))
             }
-            .padding(18)
-            .frame(width: 345, height: 220)
-            .background(LinearGradient(colors: [Color(red: 0.08, green: 0.19, blue: 0.42), Color(red: 0.47, green: 0.08, blue: 0.17)], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 18))
+            .frame(width: 330, alignment: .topLeading)
         }
         .buttonStyle(.plain)
     }
