@@ -97,6 +97,7 @@ actor SportsDBScheduleClient {
     private var cache: [String: CacheEntry] = [:]
     private var badgeCache: [String: URL] = [:]
     private var missedBadges: Set<String> = []
+    private var broadcastCache: [String: (Date, [String])] = [:]
     private let ttl: TimeInterval = 15 * 60
     func events(on date: Date, sport: String, forceRefresh: Bool = false) async throws -> [SportsDBEvent] {
         let formatter = DateFormatter()
@@ -130,6 +131,28 @@ actor SportsDBScheduleClient {
         return events
     }
 
+    func broadcastChannels(eventID: String) async throws -> [String] {
+        guard !eventID.isEmpty, eventID.allSatisfy({ $0.isNumber }) else { return [] }
+        if let cached = broadcastCache[eventID], Date().timeIntervalSince(cached.0) < ttl {
+            return cached.1
+        }
+        let apiKey = SportsDBPremiumKeyStore.read() ?? "123"
+        guard let url = URL(string: "https://www.thesportsdb.com/api/v1/json/\(apiKey)/lookuptv.php?id=\(eventID)") else {
+            return []
+        }
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 12
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let response = response as? HTTPURLResponse else { throw URLError(.badServerResponse) }
+        if response.statusCode == 429 { throw SportsDBScheduleError.rateLimited }
+        guard response.statusCode == 200 else { throw URLError(.badServerResponse) }
+        let lookup = try JSONDecoder().decode(SportsDBBroadcastLookup.self, from: data)
+        let names = Array(Set((lookup.tvevent ?? []).compactMap { $0.strChannel?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty })).sorted()
+        broadcastCache[eventID] = (Date(), names)
+        return names
+    }
+
     func teamBadge(id: String) async -> URL? {
         await badge(kind: "team", id: id)
     }
@@ -161,6 +184,11 @@ actor SportsDBScheduleClient {
         badgeCache[cacheKey] = badge
         return badge
     }
+}
+
+private struct SportsDBBroadcastLookup: Decodable {
+    struct Broadcast: Decodable { let strChannel: String? }
+    let tvevent: [Broadcast]?
 }
 
 private struct SportsDBArtworkLookup: Decodable {
