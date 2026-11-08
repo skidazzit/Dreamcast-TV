@@ -11,6 +11,11 @@ final class MovieBoxWebMovieDetailParserTests: XCTestCase {
           <img src="https://images.example.test/movie.jpg" class="cover" />
           <p class="movie_title"><span class="name">First &amp; Second</span></p>
           <span class="year">2026</span>
+          <div style="width:306px;font-size:18px;line-height:32px;display:inline-block;">
+            <p>93 minutes</p><p>R</p><p>CRIME, SCI-FI, THRILLER</p>
+          </div>
+          <img src="/static/img/imdb.png" /><div><p style="font-size:22px;">3.9</p></div>
+
           <meta itemprop="datePublished" content="2026-10-14" />
           <p style="font-size:18px;margin-top:30px;">A movie &amp; its story.</p>
         </div>
@@ -22,6 +27,10 @@ final class MovieBoxWebMovieDetailParserTests: XCTestCase {
         XCTAssertEqual(result.id, "12345")
         XCTAssertEqual(result.title, "First & Second")
         XCTAssertEqual(result.year, "2026")
+        XCTAssertEqual(result.runtimeMinutes, 93)
+        XCTAssertEqual(result.contentRating, "R")
+        XCTAssertEqual(result.genres, ["Crime", "Sci-Fi", "Thriller"])
+        XCTAssertEqual(result.imdbRating, "3.9")
         XCTAssertEqual(result.releaseDate, "October 14, 2026")
         XCTAssertEqual(result.posterURL?.absoluteString, "https://images.example.test/movie.jpg")
         XCTAssertEqual(result.synopsis, "A movie & its story.")
