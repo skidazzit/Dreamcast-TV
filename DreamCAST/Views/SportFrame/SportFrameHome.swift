@@ -5,8 +5,8 @@ struct SportFrameHome: View {
     @StateObject private var fixtures = FixtureStore()
     @StateObject private var liveTV = LiveTVDataStore.shared
     @State private var tab = 0
-    @State private var sport = "Soccer"
-    @State private var selectedLeague = "All Leagues"
+    @AppStorage("sportFrameSelectedSport") private var sport = "Soccer"
+    @AppStorage("sportFrameSelectedLeague") private var selectedLeague = "All Leagues"
     @State private var dayOffset = 0
     @State private var selectedEvent: SportEvent?
     @State private var premiumKeyInput = ""
@@ -74,41 +74,14 @@ struct SportFrameHome: View {
     private var matchesPage: some View {
         VStack(alignment: .leading, spacing: 26) {
             Text("Sports schedule").font(.largeTitle.bold())
-            Text("Choose a sport").font(.title3.bold())
-            ScrollView(.horizontal) {
-                HStack(spacing: 14) {
-                    ForEach(sports, id: \.self) { item in
-                        Button(item) { sport = item; selectedLeague = allLeagues }
-                            .buttonStyle(.bordered)
-                            .tint(sport == item ? accent : .gray)
-                    }
-                }
-            }
-            if !availableLeagues.isEmpty {
-                HStack {
-                    Text("League").font(.title3.bold())
-                    Menu {
-                        Button(allLeagues) { selectedLeague = allLeagues }
-                        ForEach(availableLeagues, id: \.self) { league in
-                            Button(league) { selectedLeague = league }
-                        }
-                    } label: {
-                        Label(selectedLeague, systemImage: "chevron.down")
-                            .padding(.horizontal, 22)
-                            .padding(.vertical, 14)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(accent)
-                    Spacer()
-                    Text("Leagues with matches on this day")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-            }
+            Text("\(sport) · \(selectedLeague)")
+                .font(.title3).foregroundStyle(.secondary)
+            Button("Change sport or league in Setup") { tab = 2 }
+                .buttonStyle(.bordered)
             HStack(spacing: 18) {
                 ForEach(-1...3, id: \.self) { offset in
                     Button(offset == 0 ? "Today" : offset == -1 ? "Yesterday" : "Day +\(offset)") {
                         dayOffset = offset
-                        selectedLeague = allLeagues
                     }
                     .buttonStyle(.bordered)
                     .tint(dayOffset == offset ? accent : .gray)
@@ -144,6 +117,44 @@ struct SportFrameHome: View {
                     }
                 }
             }
+        }
+    }
+
+    private var sportLeagueSettings: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            Text("Sport and league").font(.largeTitle.bold())
+            Text("Choose a sport").font(.title3.bold())
+            ScrollView(.horizontal) {
+                HStack(spacing: 14) {
+                    ForEach(sports, id: \.self) { item in
+                        Button(item) { sport = item; selectedLeague = allLeagues }
+                            .buttonStyle(.bordered)
+                            .tint(sport == item ? accent : .gray)
+                    }
+                }
+            }
+            if !availableLeagues.isEmpty {
+                HStack {
+                    Text("League").font(.title3.bold())
+                    Menu {
+                        Button(allLeagues) { selectedLeague = allLeagues }
+                        ForEach(availableLeagues, id: \.self) { league in
+                            Button(league) { selectedLeague = league }
+                        }
+                    } label: {
+                        Label(selectedLeague, systemImage: "chevron.down")
+                            .padding(.horizontal, 22)
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(accent)
+                    Spacer()
+                    Text("Leagues with matches on this day")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Text("Your choices are saved for the next time you open SportFrame.")
+                .font(.footnote).foregroundStyle(.secondary)
         }
     }
 
@@ -194,6 +205,8 @@ struct SportFrameHome: View {
 
     private var setupPage: some View {
         VStack(alignment: .leading, spacing: 22) {
+            sportLeagueSettings
+            Divider()
             Text("TheSportsDB Premium").font(.largeTitle.bold())
             Text(premiumKeySaved ? "Premium key saved on this Apple TV" : "Using free sports data")
                 .foregroundStyle(premiumKeySaved ? accent : .secondary)
