@@ -9,6 +9,10 @@ nonisolated struct MovieBoxWebMovieDetail: Sendable, Equatable {
     let title: String
     let year: String?
     let releaseDate: String?
+    let runtimeMinutes: Int?
+    let contentRating: String?
+    let genres: [String]
+    let imdbRating: String?
     let posterURL: URL?
     let synopsis: String?
 }
@@ -39,6 +43,25 @@ nonisolated enum MovieBoxWebMovieDetailParser {
     private static let synopsisPattern = #"<p\b[^>]*style=["'][^"']*margin-top:30px[^"']*["'][^>]*>([\s\S]*?)</p>"#
     private static let metaDescriptionPattern = #"<meta\b[^>]*name=["']description["'][^>]*content=["']([^"']+)["']"#
 
+    private static let statsPattern = #"<p>\s*([0-9]{1,4})\s+minutes</p>\s*<p>\s*([^<]{1,12})\s*</p>\s*<p>\s*([^<]{1,200})\s*</p>"#
+    private static let imdbPattern = #"imdb\.png[\s\S]{0,450}?<p\b[^>]*>\s*([0-9](?:\.[0-9])?)\s*</p>"#
+
+    private static func movieStats(from html: String) -> (Int?, String?, [String]) {
+        guard let expression = try? NSRegularExpression(pattern: statsPattern, options: [.caseInsensitive]),
+              let match = expression.firstMatch(in: html, range: NSRange(html.startIndex..<html.endIndex, in: html)),
+              let minutesRange = Range(match.range(at: 1), in: html),
+              let ratingRange = Range(match.range(at: 2), in: html),
+              let genresRange = Range(match.range(at: 3), in: html) else {
+            return (nil, nil, [])
+        }
+        let minutes = Int(html[minutesRange])
+        let rating = String(html[ratingRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+        let genres = String(html[genresRange]).split(separator: ",").map {
+            cleanText(String($0)).capitalized
+        }.filter { !$0.isEmpty }
+        return (minutes, rating.isEmpty ? nil : rating, genres)
+    }
+
     static func detail(from html: String, id: String) throws -> MovieBoxWebMovieDetail {
         guard !id.isEmpty, id.count <= 20, id.utf8.allSatisfy({ $0 >= 48 && $0 <= 57 }) else {
             throw MovieBoxWebMovieDetailError.invalidMovieID
@@ -57,11 +80,16 @@ nonisolated enum MovieBoxWebMovieDetailParser {
             ?? capture(metaDescriptionPattern, in: html)
         let description = synopsis.map(cleanText).flatMap { $0.isEmpty ? nil : $0 }
 
+        let stats = movieStats(from: html)
         return MovieBoxWebMovieDetail(
             id: id,
             title: title,
             year: capture(yearPattern, in: html),
             releaseDate: fullDate(in: html),
+            runtimeMinutes: stats.0,
+            contentRating: stats.1,
+            genres: stats.2,
+            imdbRating: capture(imdbPattern, in: html),
             posterURL: httpsURL(capture(posterPattern, in: html)),
             synopsis: description
         )
