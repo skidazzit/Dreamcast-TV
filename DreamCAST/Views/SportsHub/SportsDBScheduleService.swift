@@ -2,6 +2,7 @@
 // Free key 123 is published in the provider's API documentation.
 import Foundation
 import Combine
+import Security
 
 nonisolated struct SportsDBEvent: Decodable, Identifiable, Sendable {
     let idEvent: String
@@ -46,6 +47,41 @@ private struct SportsDBDayResponse: Decodable, Sendable {
     let events: [SportsDBEvent]?
 }
 
+// Saved only on this Apple TV or simulator, never in the Git repository.
+nonisolated enum SportsDBPremiumKeyStore {
+    private static let service = "DreamCAST.TheSportsDB"
+    private static let account = "premium-api-key"
+
+    static func read() -> String? {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecReturnData as String: true,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+        var result: CFTypeRef?
+        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
+              let data = result as? Data,
+              let key = String(data: data, encoding: .utf8), !key.isEmpty else { return nil }
+        return key
+    }
+
+    static func save(_ key: String?) -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+        let deletion = SecItemDelete(query as CFDictionary)
+        guard deletion == errSecSuccess || deletion == errSecItemNotFound else { return false }
+        guard let key, !key.isEmpty else { return true }
+        var attributes = query
+        attributes[kSecValueData as String] = Data(key.utf8)
+        return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
+    }
+}
+
 actor SportsDBScheduleClient {
     static let shared = SportsDBScheduleClient()
 
@@ -55,19 +91,24 @@ actor SportsDBScheduleClient {
     }
     private var cache: [String: CacheEntry] = [:]
     private let ttl: TimeInterval = 15 * 60
-    private let base = URL(string: "https://www.thesportsdb.com/api/v1/json/123/eventsday.php")!
-
-    func events(on date: Date) async throws -> [SportsDBEvent] {
+    func events(on date: Date, forceRefresh: Bool = false) async throws -> [SportsDBEvent] {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.timeZone = .current
         formatter.dateFormat = "yyyy-MM-dd"
-        let key = formatter.string(from: date)
-        if let entry = cache[key], Date().timeIntervalSince(entry.fetchedAt) < ttl {
+        let day = formatter.string(from: date)
+        let premiumKey = SportsDBPremiumKeyStore.read()
+        let tier = premiumKey == nil ? "free" : "premium"
+        let cacheKey = "\(tier):\(day)"
+        if !forceRefresh, let entry = cache[cacheKey], Date().timeIntervalSince(entry.fetchedAt) < ttl {
             return entry.events
         }
+        let apiKey = premiumKey ?? "123"
+        guard let base = URL(string: "https://www.thesportsdb.com/api/v1/json/\(apiKey)/eventsday.php") else {
+            throw URLError(.badURL)
+        }
         var components = URLComponents(url: base, resolvingAgainstBaseURL: false)!
-        components.queryItems = [URLQueryItem(name: "d", value: key)]
+        components.queryItems = [URLQueryItem(name: "d", value: day)]
         guard let url = components.url else { return [] }
         var request = URLRequest(url: url)
         request.timeoutInterval = 15
@@ -77,7 +118,7 @@ actor SportsDBScheduleClient {
             throw URLError(.badServerResponse)
         }
         let events = try JSONDecoder().decode(SportsDBDayResponse.self, from: data).events ?? []
-        cache[key] = CacheEntry(fetchedAt: Date(), events: events)
+        cache[cacheKey] = CacheEntry(fetchedAt: Date(), events: events)
         return events
     }
 }
@@ -89,14 +130,14 @@ final class SportsDBScheduleModel: ObservableObject {
     @Published private(set) var errorMessage: String?
     private var generation = 0
 
-    func load(date: Date) {
+    func load(date: Date, forceRefresh: Bool = false) {
         generation += 1
         let current = generation
         isLoading = true
         errorMessage = nil
         Task {
             do {
-                let results = try await SportsDBScheduleClient.shared.events(on: date)
+                let results = try await SportsDBScheduleClient.shared.events(on: date, forceRefresh: forceRefresh)
                 guard current == generation else { return }
                 events = results
                 isLoading = false
