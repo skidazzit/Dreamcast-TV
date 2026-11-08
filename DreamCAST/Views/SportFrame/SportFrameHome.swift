@@ -10,6 +10,7 @@ struct SportFrameHome: View {
     @AppStorage("sportFrameSportOrderV2") private var sportOrderValue = "Soccer|Basketball|American Football|Tennis|Motorsport|Ice Hockey|Cricket"
     @AppStorage("sportFrameLeagueSelectionsV2") private var leagueSelectionsValue = "{}"
     @State private var expandedSport: String?
+    @State private var expandedSettingsSection: String?
     @State private var dayOffset = 0
     @State private var selectedEvent: SportEvent?
     @State private var premiumKeyInput = ""
@@ -191,8 +192,7 @@ struct SportFrameHome: View {
 
     private var sportLeagueSettings: some View {
         VStack(alignment: .leading, spacing: 22) {
-            Text("Which sports do you follow?").font(.largeTitle.bold())
-            Text("Tick sports to follow. Use the arrows to set the order of sports on your Matches page.")
+            Text("Choose your sports and leagues. Use the arrows to set the order shown on Matches.")
                 .foregroundStyle(.secondary)
             HStack(spacing: 16) {
                 Button("Select all") { followedSportsValue = sportOrder.joined(separator: "|") }
@@ -202,7 +202,7 @@ struct SportFrameHome: View {
             if let message = catalog.message {
                 Text(message).font(.caption).foregroundStyle(.orange)
             }
-            VStack(alignment: .leading, spacing: 0) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(sportOrder, id: \.self) { sport in
                     HStack(spacing: 15) {
                         Button { toggleSport(sport) } label: {
@@ -230,7 +230,7 @@ struct SportFrameHome: View {
                     .padding(.vertical, 15)
                     if expandedSport == sport {
                         let leagueNames = allLeagues(for: sport)
-                        VStack(alignment: .leading, spacing: 10) {
+                        LazyVStack(alignment: .leading, spacing: 10) {
                             Text("Leagues in \(sport)")
                                 .font(.headline).foregroundStyle(accent)
                             HStack(spacing: 16) {
@@ -267,8 +267,7 @@ struct SportFrameHome: View {
                     Divider()
                 }
             }
-            .padding(24)
-            .background(panel, in: RoundedRectangle(cornerRadius: 20))
+            .padding(.horizontal, 12)
             Text("Sports and leagues come from TheSportsDB. Free access returns fewer choices.")
                 .font(.footnote).foregroundStyle(.secondary)
         }
@@ -320,10 +319,56 @@ struct SportFrameHome: View {
     }
 
     private var setupPage: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            sportLeagueSettings
-            Divider()
-            Text("TheSportsDB Premium").font(.largeTitle.bold())
+        VStack(alignment: .leading, spacing: 20) {
+            Text("SportFrame Settings").font(.system(size: 42, weight: .bold, design: .rounded))
+            Text("Manage your sports, data access, and TV channels.")
+                .font(.title3).foregroundStyle(.secondary)
+            settingsSection("Which sports do you follow?", subtitle: "\(followedSports.count) sports selected · choose leagues and order", icon: "sportscourt", key: "sports") {
+                sportLeagueSettings
+            }
+            settingsSection("TheSportsDB Premium", subtitle: premiumKeySaved ? "Premium key saved" : "Free access", icon: "key.horizontal", key: "premium") {
+                premiumSettings
+            }
+            settingsSection("Live TV connection", subtitle: "\(liveTV.channels.count) channels available", icon: "tv", key: "livetv") {
+                liveTVSettings
+            }
+        }
+    }
+
+    private func settingsSection<Content: View>(_ title: String, subtitle: String, icon: String,
+                                                 key: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                expandedSettingsSection = expandedSettingsSection == key ? nil : key
+            } label: {
+                HStack(spacing: 24) {
+                    Image(systemName: icon)
+                        .font(.title2).foregroundStyle(accent)
+                        .frame(width: 54, height: 54)
+                        .background(accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text(title).font(.title2.bold())
+                        Text(subtitle).font(.footnote).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Image(systemName: expandedSettingsSection == key ? "chevron.up" : "chevron.down")
+                        .foregroundStyle(.secondary)
+                }
+                .padding(24)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if expandedSettingsSection == key {
+                Divider().padding(.horizontal, 24)
+                content()
+                    .padding(28)
+            }
+        }
+        .background(panel, in: RoundedRectangle(cornerRadius: 20))
+    }
+
+    private var premiumSettings: some View {
+        VStack(alignment: .leading, spacing: 20) {
             Text(premiumKeySaved ? "Premium key saved on this Apple TV" : "Using free sports data")
                 .foregroundStyle(premiumKeySaved ? accent : .secondary)
             SecureField("Enter Premium API key", text: $premiumKeyInput)
@@ -355,19 +400,20 @@ struct SportFrameHome: View {
             }
             Text("Your key stays in the Apple TV Keychain. TheSportsDB v1 sends it in the request URL.")
                 .font(.footnote).foregroundStyle(.secondary)
-            Divider()
-            Text("Live TV connection").font(.largeTitle.bold())
+        }
+    }
+
+    private var liveTVSettings: some View {
+        VStack(alignment: .leading, spacing: 20) {
             Text("SportFrame uses your existing DreamCAST Live TV playlists.")
                 .foregroundStyle(.secondary)
             Text("\(liveTV.channels.count) available channels")
                 .font(.title2.bold()).foregroundStyle(accent)
             Text("Add or refresh M3U and Xtream sources in DreamCAST Live TV settings.")
                 .font(.footnote).foregroundStyle(.secondary)
-            Text("Premium expands TheSportsDB schedule limits. Channel playback still uses DreamCAST Live TV.")
+            Text("Channel playback uses DreamCAST Live TV. Your playlists remain unchanged.")
                 .font(.footnote).foregroundStyle(.secondary)
         }
-        .padding(28)
-        .background(panel, in: RoundedRectangle(cornerRadius: 20))
     }
 
     private func eventChannels(_ event: SportEvent) -> some View {
