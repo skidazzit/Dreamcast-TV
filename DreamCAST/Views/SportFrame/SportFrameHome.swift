@@ -12,6 +12,8 @@ struct SportFrameHome: View {
     @State private var expandedSport: String?
     @State private var expandedSettingsSection: String?
     @State private var dayOffset = 0
+    @State private var matchSportFilter = "All Sports"
+    @State private var matchLeagueFilter = "All Leagues"
     @State private var selectedEvent: SportEvent?
     @State private var premiumKeyInput = ""
     @State private var premiumKeySaved = SportsDBAccess.hasPremiumKey
@@ -21,6 +23,8 @@ struct SportFrameHome: View {
     private let fallbackSports = ["Soccer", "Basketball", "American Football", "Tennis", "Motorsport", "Ice Hockey", "Cricket", "Baseball", "Rugby", "Golf"]
     private let accent = Color(red: 0.0, green: 0.8, blue: 0.94)
     private let panel = Color(red: 0.095, green: 0.11, blue: 0.15)
+    private let allSports = "All Sports"
+    private let allLeagueFilter = "All Leagues"
 
     private var sportOrder: [String] {
         let saved = sportOrderValue.split(separator: "|").map(String.init)
@@ -45,6 +49,21 @@ struct SportFrameHome: View {
             guard fixtures.eventSports[event.idEvent] == sport else { return false }
             return chosen.map { $0.contains(event.league) } ?? true
         }
+    }
+
+    private var filteredSports: [String] {
+        matchSportFilter == allSports ? followedSports : followedSports.filter { $0 == matchSportFilter }
+    }
+
+    private var filteredMatches: [SportEvent] {
+        filteredSports.flatMap { sport in
+            matches(in: sport).filter { matchLeagueFilter == allLeagueFilter || $0.league == matchLeagueFilter }
+        }
+    }
+
+    private var filterLeagues: [String] {
+        let names = filteredSports.flatMap { allLeagues(for: $0) }
+        return Array(Set(names)).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
     private func toggleSport(_ name: String) {
@@ -128,66 +147,159 @@ struct SportFrameHome: View {
     }
 
     private var matchesPage: some View {
-        VStack(alignment: .leading, spacing: 26) {
-            Text("Sports schedule").font(.largeTitle.bold())
-            Text("\(followedSports.count) sports followed · arranged in your chosen order")
-                .font(.title3).foregroundStyle(.secondary)
-            Button("Choose sports and leagues in Setup") { tab = 2 }
-                .buttonStyle(.bordered)
-            HStack(spacing: 18) {
-                ForEach(-1...3, id: \.self) { offset in
-                    Button(offset == 0 ? "Today" : offset == -1 ? "Yesterday" : "Day +\(offset)") {
-                        dayOffset = offset
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(dayOffset == offset ? accent : .gray)
+        VStack(alignment: .leading, spacing: 38) {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("Sports").font(.system(size: 42, weight: .bold, design: .rounded))
+                    Text("Live games, upcoming fixtures, and league scores")
+                        .foregroundStyle(.secondary)
                 }
+                Spacer()
+                Button { tab = 2 } label: { Label("Manage sports", systemImage: "slider.horizontal.3") }
+                    .buttonStyle(.bordered)
+            }
+            HStack(spacing: 16) {
+                Menu {
+                    Button(allSports) { matchSportFilter = allSports; matchLeagueFilter = allLeagueFilter }
+                    ForEach(followedSports, id: \.self) { sport in
+                        Button(sport) { matchSportFilter = sport; matchLeagueFilter = allLeagueFilter }
+                    }
+                } label: { Label(matchSportFilter, systemImage: "sportscourt") }
+                .buttonStyle(.bordered)
+                Menu {
+                    Button(allLeagueFilter) { matchLeagueFilter = allLeagueFilter }
+                    ForEach(filterLeagues, id: \.self) { league in
+                        Button(league) { matchLeagueFilter = league }
+                    }
+                } label: { Label(matchLeagueFilter, systemImage: "list.bullet") }
+                .buttonStyle(.bordered)
+                HStack(spacing: 8) {
+                    ForEach(-1...3, id: \.self) { offset in
+                        Button(offset == 0 ? "Today" : offset == -1 ? "Yesterday" : "+\(offset)d") { dayOffset = offset }
+                            .buttonStyle(.bordered)
+                            .tint(dayOffset == offset ? accent : .gray)
+                    }
+                }
+                Spacer()
             }
             if followedSports.isEmpty {
-                emptyPanel("Choose at least one sport in Setup to see games.")
+                emptyPanel("Select sports in Setup to see matches.")
             } else if fixtures.loading {
-                ProgressView("Loading matches…")
+                ProgressView("Loading sports…")
             } else if let error = fixtures.error {
                 Text(error).foregroundStyle(.orange)
-            } else if fixtures.events.isEmpty {
-                emptyPanel("No events returned for the selected sports and day.")
+            } else if filteredMatches.isEmpty {
+                emptyPanel("No matches for these filters and date. Try All Sports or All Leagues.")
             } else {
-                ForEach(followedSports, id: \.self) { sport in
-                    let sportMatches = matches(in: sport)
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text(sport).font(.title.bold())
-                        Text("\(sportMatches.count) matches")
-                            .font(.caption).foregroundStyle(.secondary)
-                        if sportMatches.isEmpty {
-                            emptyPanel("No games found for the chosen leagues on this day.")
-                        } else {
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 18), count: 3), spacing: 18) {
-                                ForEach(sportMatches) { event in matchCard(event) }
+                matchShelf("Happening now", events: filteredMatches.filter(\.isLive))
+                matchShelf("Coming up", events: filteredMatches.filter { $0.isUpcoming || $0.startDate == nil && !$0.isLive })
+                leagueSummarySection
+            }
+        }
+    }
+
+    private func matchShelf(_ title: String, events: [SportEvent]) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(title).font(.title.bold())
+            if events.isEmpty {
+                Text("No \(title.lowercased()) matches found.")
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 12)
+            } else {
+                ScrollView(.horizontal) {
+                    LazyHStack(alignment: .top, spacing: 22) {
+                        ForEach(events) { event in matchCard(event) }
+                    }
+                    .padding(.vertical, 8)
+                }
+            }
+        }
+    }
+
+    private var leagueSummarySection: some View {
+        VStack(alignment: .leading, spacing: 32) {
+            ForEach(filteredSports, id: \.self) { sport in
+                leagueShelf(for: sport)
+            }
+        }
+    }
+
+    private func leagueShelf(for sport: String) -> some View {
+        let sportMatches = filteredMatches.filter { fixtures.eventSports[$0.idEvent] == sport }
+        let leagues = Array(Set(sportMatches.map(\.league))).sorted()
+        return VStack(alignment: .leading, spacing: 18) {
+            if !leagues.isEmpty {
+                Text(sport).font(.title.bold())
+            }
+            ScrollView(.horizontal) {
+                LazyHStack(alignment: .top, spacing: 18) {
+                    ForEach(leagues, id: \.self) { league in
+                        let events = sportMatches.filter { $0.league == league }
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text(league).font(.headline.bold()).lineLimit(1)
+                            ForEach(events.prefix(5)) { event in
+                                Button { selectedEvent = event } label: {
+                                    HStack(spacing: 8) {
+                                        Text(event.strHomeTeam ?? "Home").lineLimit(1)
+                                        Spacer(minLength: 5)
+                                        Text(event.intHomeScore.map { "\($0)–\(event.intAwayScore ?? "–")" } ?? event.timeLabel)
+                                            .font(.caption.bold()).lineLimit(1)
+                                        Spacer(minLength: 5)
+                                        Text(event.strAwayTeam ?? "Away").lineLimit(1)
+                                    }
+                                    .font(.caption)
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
+                        .padding(22)
+                        .frame(width: 360, height: 240, alignment: .topLeading)
+                        .background(panel, in: RoundedRectangle(cornerRadius: 20))
                     }
                 }
+                .padding(.vertical, 8)
             }
         }
     }
 
     private func matchCard(_ event: SportEvent) -> some View {
         Button { selectedEvent = event } label: {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 11) {
                 HStack {
-                    Text(event.league).font(.caption).foregroundStyle(accent)
+                    Text(event.league).font(.caption.bold()).lineLimit(1)
                     Spacer()
-                    Text(event.kickoff).font(.caption).foregroundStyle(.secondary)
+                    Text(event.isLive ? "● LIVE" : event.isUpcoming ? "SOON" : event.startDate == nil ? "SCHEDULED" : "RESULT")
+                        .font(.caption.bold())
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(event.isLive ? Color.red : Color.blue, in: Capsule())
                 }
-                teamRow(name: event.strHomeTeam ?? "Home", badge: event.homeBadge, score: event.intHomeScore)
-                teamRow(name: event.strAwayTeam ?? "Away", badge: event.awayBadge, score: event.intAwayScore)
-                Text("Find my channels").font(.caption.bold()).foregroundStyle(accent)
+                Spacer(minLength: 0)
+                HStack(spacing: 12) {
+                    matchBadge(event.homeBadge)
+                    Spacer(minLength: 0)
+                    Text(event.intHomeScore.map { "\($0) – \(event.intAwayScore ?? "–")" } ?? event.timeLabel)
+                        .font(.title2.bold()).lineLimit(1).minimumScaleFactor(0.7)
+                    Spacer(minLength: 0)
+                    matchBadge(event.awayBadge)
+                }
+                Spacer(minLength: 0)
+                Text(event.name).font(.subheadline.bold()).lineLimit(2)
+                let count = ChannelMatcher.matching(event, in: liveTV.channels).count
+                Text(count == 0 ? "Find channels" : "\(count) matching channels")
+                    .font(.caption).foregroundStyle(.white.opacity(0.8))
             }
-            .padding(22)
-            .frame(maxWidth: .infinity, minHeight: 210, alignment: .leading)
-            .background(panel, in: RoundedRectangle(cornerRadius: 18))
+            .padding(18)
+            .frame(width: 345, height: 220)
+            .background(LinearGradient(colors: [Color(red: 0.08, green: 0.19, blue: 0.42), Color(red: 0.47, green: 0.08, blue: 0.17)], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 18))
         }
         .buttonStyle(.plain)
+    }
+
+    private func matchBadge(_ url: URL?) -> some View {
+        AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: {
+            Image(systemName: "shield.fill").foregroundStyle(.white.opacity(0.7))
+        }
+        .frame(width: 65, height: 65)
     }
 
     private var sportLeagueSettings: some View {
