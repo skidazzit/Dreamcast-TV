@@ -64,7 +64,7 @@ struct SportFrameHome: View {
     }
 
     private func isLive(_ event: SportEvent) -> Bool {
-        fixtures.liveEventIDs.contains(event.idEvent) || event.isLive
+        event.isLive
     }
 
     private var filterLeagues: [String] {
@@ -136,16 +136,6 @@ struct SportFrameHome: View {
         }
         .task(id: "\(followedSportsValue)-\(sportOrderValue)-\(dayOffset)-\(credentialRevision)-\(refreshRevision)") {
             await fixtures.fetch(sports: followedSports, date: Calendar.current.date(byAdding: .day, value: dayOffset, to: Date()) ?? Date())
-        }
-        .task(id: "live-\(followedSportsValue)-\(dayOffset)-\(credentialRevision)-\(refreshRevision)") {
-            guard dayOffset == 0, !followedSports.isEmpty else { return }
-            while !Task.isCancelled {
-                let seconds: Double = followedSports.count > 15 ? 180 : 90
-                do { try await Task.sleep(for: .seconds(seconds)) } catch { break }
-                if Task.isCancelled { break }
-                // Refresh scores in the background without clearing or shifting match cards.
-                await fixtures.fetch(sports: followedSports, date: Date(), quietly: true)
-            }
         }
         .task(id: credentialRevision) {
             await catalog.refresh()
