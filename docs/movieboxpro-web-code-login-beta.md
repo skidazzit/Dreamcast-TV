@@ -89,6 +89,15 @@ loads the site's `?season=<number>` page. Errors now distinguish login, missing
 title, and missing episode data without printing private response content.
 This fix still needs a simulator test.
 
+## Read-only movie details pilot
+
+Selecting a movie now loads `GET /movie/<id>` using the saved browser session.
+The parser reads the rendered title, year, poster, and synopsis where present.
+The detail view uses the same poster size as Plex and has Back and Refresh
+controls. It never parses or saves play links or account fields. No playback
+is requested. The user's browser has not supplied a sample movie detail page,
+so the movie metadata format still needs a live simulator check.
+
 ## Limits and test notes
 
 - The website may reject automated requests or change its HTML. This has not
