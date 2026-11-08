@@ -14,20 +14,22 @@ nonisolated enum MovieBoxLegacyTitleMappingError: Error, Equatable {
 nonisolated enum MovieBoxLegacyTitleMapper {
     static func decode(_ data: Data, kind: MovieBoxTitleKind) throws -> MovieBoxCatalogTitle {
         let record = try JSONDecoder().decode(Record.self, from: data)
-        guard let id = [record.id, record.mid, record.tid, record.mb_id]
-            .compactMap { $0?.value }
-            .first(where: { !$0.isEmpty }) else {
+        let candidateIDs = [record.id?.value, record.mid?.value, record.tid?.value, record.mb_id?.value]
+        let validIDs = candidateIDs.compactMap { $0 }.filter { !$0.isEmpty }
+        guard let id = validIDs.first else {
             throw MovieBoxLegacyTitleMappingError.missingIdentifier
         }
-        guard let title = record.title?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !title.isEmpty else {
+        let cleanedTitle = record.title?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let title = cleanedTitle, !title.isEmpty else {
             throw MovieBoxLegacyTitleMappingError.missingTitle
         }
         let artwork = [record.thumbs, record.thumbs_min, record.thumbs_org, record.poster]
             .compactMap { raw -> URL? in
-                guard let raw, let url = URL(string: raw),
-                      url.scheme?.lowercased() == "https", url.host != nil else { return nil }
-                return url
+                if let raw, let url = URL(string: raw),
+                   url.scheme?.lowercased() == "https", url.host != nil {
+                    return url
+                }
+                return nil
             }
             .first
 
