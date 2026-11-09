@@ -265,7 +265,7 @@ struct SportFrameHome: View {
             } else {
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: 18) {
-                        ForEach(events) { event in matchCard(event) }
+                        ForEach(events) { event in matchCard(event, focusScope: "shelf-\(title)") }
                     }
                     .padding(.vertical, 8)
                 }
@@ -311,7 +311,7 @@ struct SportFrameHome: View {
             if !events.isEmpty {
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: 18) {
-                        ForEach(events) { event in matchCard(event) }
+                        ForEach(events) { event in matchCard(event, focusScope: "sport-\(sport)") }
                     }
                     .padding(.vertical, 8)
                 }
@@ -375,12 +375,22 @@ struct SportFrameHome: View {
                         }
                     }
                     .font(.system(size: 15))
-                    .padding(.vertical, 5)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 7)
+                    .contentShape(RoundedRectangle(cornerRadius: 9))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(SportFrameArtworkButtonStyle())
                 .focusEffectDisabled()
-                .focused($focusedCard, equals: "league-\(title)-\(event.idEvent)")
-                .background(focusedCard == "league-\(title)-\(event.idEvent)" ? Color.white.opacity(0.12) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+                .focused($focusedCard, equals: "league-\(sport)-\(title)-\(event.idEvent)")
+                .background(focusedCard == "league-\(sport)-\(title)-\(event.idEvent)" ? Color.white.opacity(0.09) : Color.clear,
+                            in: RoundedRectangle(cornerRadius: 9))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 9)
+                        .stroke(focusedCard == "league-\(sport)-\(title)-\(event.idEvent)" ? Color.white.opacity(0.86) : .clear,
+                                lineWidth: 2)
+                        .allowsHitTesting(false)
+                }
                 Divider().opacity(0.35)
             }
         }
@@ -411,8 +421,9 @@ struct SportFrameHome: View {
         .frame(width: 27, height: 27)
     }
 
-    private func matchCard(_ event: SportEvent) -> some View {
+    private func matchCard(_ event: SportEvent, focusScope: String) -> some View {
         let live = isLive(event)
+        let focusID = "match-\(focusScope)-\(event.idEvent)"
         return VStack(alignment: .leading, spacing: 9) {
             Button { selectedEvent = event } label: {
                 VStack(alignment: .leading, spacing: 9) {
@@ -453,12 +464,10 @@ struct SportFrameHome: View {
             }
             .buttonStyle(SportFrameArtworkButtonStyle())
             .focusEffectDisabled()
-            .focused($focusedCard, equals: "match-\(event.idEvent)")
-            .scaleEffect(focusedCard == "match-\(event.idEvent)" ? 1.035 : 1)
-            .animation(.spring(response: 0.25, dampingFraction: 0.82), value: focusedCard == "match-\(event.idEvent)")
+            .focused($focusedCard, equals: focusID)
             .overlay {
                 RoundedRectangle(cornerRadius: 14)
-                    .stroke(focusedCard == "match-\(event.idEvent)" ? Color.white : Color.clear, lineWidth: 3)
+                    .stroke(focusedCard == focusID ? Color.white.opacity(0.86) : Color.clear, lineWidth: 2)
                     .allowsHitTesting(false)
             }
             .task(id: "palette-\(event.idEvent)") {
