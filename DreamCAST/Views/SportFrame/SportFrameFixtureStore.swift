@@ -1,6 +1,12 @@
 import Foundation
 import Combine
 
+struct SportFrameScore: Equatable {
+    let home: String?
+    let away: String?
+    let status: String?
+}
+
 enum SportsDBAccess {
     private static let keychainAccount = "sportFrameSportsDBPremiumKey"
 
@@ -24,13 +30,15 @@ final class FixtureStore: ObservableObject {
     @Published private(set) var eventSports: [String: String] = [:]
     @Published private(set) var nextDayEvents: [SportEvent] = []
     @Published private(set) var nextDaySports: [String: String] = [:]
+    @Published private(set) var scoreUpdates: [String: SportFrameScore] = [:]
+    @Published private(set) var liveScores: [String: SportFrameScore] = [:]
+    @Published private(set) var liveIDs: Set<String> = []
     @Published private(set) var loading = false
     @Published private(set) var error: String?
 
-    func fetch(sports: [String], date: Date) async {
-        loading = true
-        error = nil
-        defer { loading = false }
+    func fetch(sports: [String], date: Date, quietly: Bool = false) async {
+        if !quietly { loading = true; error = nil }
+        defer { if !quietly { loading = false } }
         guard !sports.isEmpty else { events = []; eventSports = [:]; nextDayEvents = []; nextDaySports = [:]; return }
         let day = DateFormatter()
         day.dateFormat = "yyyy-MM-dd"
@@ -73,12 +81,89 @@ final class FixtureStore: ObservableObject {
         if Task.isCancelled { return }
         // One event may appear under multiple sport labels. Keep its first copy.
         var ids = Set<String>()
-        events = results.filter { ids.insert($0.idEvent).inserted }
-        eventSports = sportMap
-        if failures > 0 { error = failures == sports.count * 2 ? "Could not load sports schedules." : nil }
+        let fetched = results.filter { ids.insert($0.idEvent).inserted }
+        if quietly && failures == sports.count * 2 { return }
+        if eventFingerprint(events) != eventFingerprint(fetched) { events = fetched }
+        if eventSports != sportMap { eventSports = sportMap }
+        if !quietly && failures > 0 { error = failures == sports.count * 2 ? "Could not load sports schedules." : nil }
         var upcomingIDs = Set<String>()
-        nextDayEvents = calendar.isDateInToday(date) ? upcoming.filter { upcomingIDs.insert($0.idEvent).inserted } : []
-        nextDaySports = calendar.isDateInToday(date) ? upcomingSports : [:]
+        let nextEvents = calendar.isDateInToday(date) ? upcoming.filter { upcomingIDs.insert($0.idEvent).inserted } : []
+        let nextSports = calendar.isDateInToday(date) ? upcomingSports : [:]
+        if eventFingerprint(nextDayEvents) != eventFingerprint(nextEvents) { nextDayEvents = nextEvents }
+        if nextDaySports != nextSports { nextDaySports = nextSports }
+    }
+
+    func score(for event: SportEvent) -> SportFrameScore {
+        let schedule = scoreUpdates[event.idEvent]
+        let live = liveScores[event.idEvent]
+        return SportFrameScore(home: live?.home ?? schedule?.home ?? event.intHomeScore,
+                               away: live?.away ?? schedule?.away ?? event.intAwayScore,
+                               status: live?.status ?? schedule?.status ?? event.strStatus)
+    }
+
+    func isLive(_ event: SportEvent) -> Bool {
+        if liveIDs.contains(event.idEvent) { return true }
+        let status = (score(for: event).status ?? "").uppercased()
+        let livePeriods: Set<String> = ["1H", "2H", "HT", "ET", "Q1", "Q2", "Q3", "Q4", "OT", "P1", "P2", "P3"]
+        return status == "LIVE" || status == "IN PLAY" || status.hasPrefix("LIVE ") || livePeriods.contains(status)
+    }
+
+    // Refresh scores without changing the event list, card IDs, or loading state.
+    func refreshScores(sports: [String], date: Date) async {
+        guard !sports.isEmpty else { return }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = .current
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: date) ?? date.addingTimeInterval(86_400)
+        var updates: [String: SportFrameScore] = [:]
+        for sport in sports {
+            for requestDate in [date, tomorrow] {
+                if Task.isCancelled { return }
+                var parts = URLComponents(string: "https://www.thesportsdb.com/api/v1/json/\(SportsDBAccess.apiKey)/eventsday.php")!
+                parts.queryItems = [URLQueryItem(name: "d", value: formatter.string(from: requestDate)),
+                                    URLQueryItem(name: "s", value: sport)]
+                guard let url = parts.url else { continue }
+                do {
+                    let (data, response) = try await URLSession.shared.data(from: url)
+                    guard (response as? HTTPURLResponse)?.statusCode == 200 else { continue }
+                    for event in try JSONDecoder().decode(DayResponse.self, from: data).events ?? [] {
+                        updates[event.idEvent] = SportFrameScore(home: event.intHomeScore, away: event.intAwayScore, status: event.strStatus)
+                    }
+                } catch { continue }
+            }
+        }
+        if !Task.isCancelled && !updates.isEmpty && updates != scoreUpdates { scoreUpdates = updates }
+    }
+
+    // Premium V2 is polled on its own two-minute schedule.
+    func refreshLiveScores() async {
+        guard SportsDBAccess.hasPremiumKey,
+              let url = URL(string: "https://www.thesportsdb.com/api/v2/json/livescore/all") else { return }
+        var request = URLRequest(url: url)
+        request.setValue(SportsDBAccess.apiKey, forHTTPHeaderField: "X_API_KEY")
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200,
+                  let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+            let rows = payload.values.compactMap { $0 as? [[String: Any]] }.first ?? []
+            var scores: [String: SportFrameScore] = [:]
+            for row in rows {
+                let eventID = (row["idEvent"] as? String) ?? (row["idEvent"] as? Int).map { String($0) }
+                guard let eventID else { continue }
+                func field(_ key: String) -> String? {
+                    if let value = row[key] as? String { return value }
+                    if let value = row[key] as? NSNumber { return value.stringValue }
+                    return nil
+                }
+                scores[eventID] = SportFrameScore(home: field("intHomeScore"), away: field("intAwayScore"), status: field("strStatus"))
+            }
+            guard !Task.isCancelled else { return }
+            if scores != liveScores { liveScores = scores }
+            let IDs = Set(scores.keys)
+            if IDs != liveIDs { liveIDs = IDs }
+        } catch {
+            // Keep the last known values during a temporary network failure.
+        }
     }
 
     private func isOnLocalDay(_ event: SportEvent, date: Date, calendar: Calendar) -> Bool {
@@ -90,5 +175,11 @@ final class FixtureStore: ObservableObject {
         formatter.timeZone = calendar.timeZone
         guard let rawDate = event.dateEvent, let fallback = formatter.date(from: rawDate) else { return false }
         return calendar.isDate(fallback, inSameDayAs: date)
+    }
+
+    private func eventFingerprint(_ events: [SportEvent]) -> [String] {
+        events.map {
+            "\($0.idEvent)|\($0.strStatus ?? "")|\($0.intHomeScore ?? "")|\($0.intAwayScore ?? "")|\($0.strTimestamp ?? "")"
+        }
     }
 }
