@@ -32,7 +32,6 @@ final class FixtureStore: ObservableObject {
     @Published private(set) var nextDaySports: [String: String] = [:]
     @Published private(set) var scoreUpdates: [String: SportFrameScore] = [:]
     @Published private(set) var liveScores: [String: SportFrameScore] = [:]
-    @Published private(set) var liveIDs: Set<String> = []
     @Published private(set) var loading = false
     @Published private(set) var error: String?
 
@@ -102,8 +101,11 @@ final class FixtureStore: ObservableObject {
     }
 
     func isLive(_ event: SportEvent) -> Bool {
-        if liveIDs.contains(event.idEvent) { return true }
-        let status = (score(for: event).status ?? "").uppercased()
+        // The live-score endpoint also returns scheduled fixtures. Require a
+        // real in-play status and never label a future kickoff as live.
+        if let startDate = event.startDate, startDate > Date() { return false }
+        let status = (score(for: event).status ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         let livePeriods: Set<String> = ["1H", "2H", "HT", "ET", "Q1", "Q2", "Q3", "Q4", "OT", "P1", "P2", "P3"]
         return status == "LIVE" || status == "IN PLAY" || status.hasPrefix("LIVE ") || livePeriods.contains(status)
     }
@@ -159,8 +161,6 @@ final class FixtureStore: ObservableObject {
             }
             guard !Task.isCancelled else { return }
             if scores != liveScores { liveScores = scores }
-            let IDs = Set(scores.keys)
-            if IDs != liveIDs { liveIDs = IDs }
         } catch {
             // Keep the last known values during a temporary network failure.
         }
