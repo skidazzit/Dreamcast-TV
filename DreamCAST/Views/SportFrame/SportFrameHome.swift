@@ -19,6 +19,8 @@ struct SportFrameHome: View {
     @State private var matchSportFilter = "All Sports"
     @State private var matchLeagueFilter = "All Leagues"
     @State private var selectedEvent: SportEvent?
+    @State private var pendingPlayerChannel: UnifiedChannel?
+    @State private var playingChannel: UnifiedChannel?
     @FocusState private var focusedCard: String?
     @State private var premiumKeyInput = ""
     @State private var premiumKeySaved = SportsDBAccess.hasPremiumKey
@@ -232,8 +234,19 @@ struct SportFrameHome: View {
         .task(id: credentialRevision) {
             await catalog.refresh()
         }
-        .sheet(item: $selectedEvent) { event in
+        .sheet(item: $selectedEvent, onDismiss: {
+            if let channel = pendingPlayerChannel {
+                pendingPlayerChannel = nil
+                playingChannel = channel
+            }
+        }) { event in
             eventChannels(event)
+        }
+        .background {
+            SportFramePlayerPresenter(channel: playingChannel) {
+                playingChannel = nil
+            }
+            .frame(width: 0, height: 0)
         }
     }
 
@@ -704,10 +717,19 @@ struct SportFrameHome: View {
         }
     }
 
-    private func channelGrid(_ channels: [UnifiedChannel]) -> some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 18), count: 4), spacing: 18) {
+    private func playSportFrameChannel(_ channel: UnifiedChannel) {
+        if selectedEvent != nil {
+            pendingPlayerChannel = channel
+            selectedEvent = nil
+        } else {
+            playingChannel = channel
+        }
+    }
+
+    private func channelGrid(_ channels: [UnifiedChannel], columns: Int = 4) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 18), count: columns), spacing: 18) {
             ForEach(channels.prefix(80)) { channel in
-                Button { onTune(channel) } label: {
+                Button { playSportFrameChannel(channel) } label: {
                     HStack(spacing: 16) {
                         AsyncImage(url: channel.logoURL) { image in image.resizable().scaledToFit() } placeholder: {
                             Image(systemName: "tv").foregroundStyle(.secondary)
@@ -831,7 +853,7 @@ struct SportFrameHome: View {
                 .font(.title2.bold()).foregroundStyle(accent)
             Text("Add or refresh M3U and Xtream sources in DreamCAST Live TV settings.")
                 .font(.footnote).foregroundStyle(.secondary)
-            Text("Channel playback uses DreamCAST Live TV. Your playlists remain unchanged.")
+            Text("Channels play in a separate SportFrame viewer. Back returns to SportFrame.")
                 .font(.footnote).foregroundStyle(.secondary)
         }
     }
@@ -840,28 +862,38 @@ struct SportFrameHome: View {
         let matches = ChannelMatcher.matching(event, in: liveTV.channels)
         return ZStack {
             SportFrameCinematicBackdrop().ignoresSafeArea()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 25) {
-                    HStack {
-                        Text(event.name).font(.largeTitle.bold())
-                        Spacer()
-                        Button("Close") { selectedEvent = nil }
-                            .focused($focusedCard, equals: "event-close")
-                            .sportFrameFocusOutline(focusedCard == "event-close")
+            VStack {
+                Spacer(minLength: 30)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 25) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("WATCH MATCH").font(.subheadline.bold()).foregroundStyle(accent)
+                                Text(event.name).font(.largeTitle.bold())
+                            }
+                            Spacer()
+                            Button("Close") { selectedEvent = nil }
+                                .focused($focusedCard, equals: "event-close")
+                                .sportFrameFocusOutline(focusedCard == "event-close")
+                        }
+                        Text("Choose a channel to watch full screen. Press Back to return to SportFrame.")
+                            .foregroundStyle(.secondary)
+                        if matches.isEmpty {
+                            emptyPanel("No matching channels found. Check your Live TV playlist or browse all channels.")
+                            Button("View all channels") { selectedEvent = nil; tab = 1 }
+                                .focused($focusedCard, equals: "event-all-channels")
+                                .sportFrameFocusOutline(focusedCard == "event-all-channels")
+                        } else {
+                            channelGrid(matches, columns: 2)
+                        }
                     }
-                    Text("Channels found by matching both team names. The stream is not verified by the EPG.")
-                        .foregroundStyle(.secondary)
-                    if matches.isEmpty {
-                        emptyPanel("No channel names match this fixture. Check Live TV channels or browse them manually.")
-                        Button("View all channels") { selectedEvent = nil; tab = 1 }
-                            .focused($focusedCard, equals: "event-all-channels")
-                            .sportFrameFocusOutline(focusedCard == "event-all-channels")
-                    } else {
-                        channelGrid(matches)
-                    }
+                    .padding(34)
                 }
-                .padding(60)
+                .frame(maxWidth: 1050, maxHeight: 650)
+                .sportFrameGlassPanel(radius: 28)
+                Spacer(minLength: 30)
             }
+            .padding(.horizontal, 30)
         }
     }
 
@@ -870,6 +902,49 @@ struct SportFrameHome: View {
             .frame(maxWidth: .infinity, minHeight: 130, alignment: .leading)
             .padding(25)
             .sportFrameGlassPanel(radius: 16)
+    }
+}
+
+// Uses the existing stream engine without handing the viewer to the Live TV guide.
+// The player owns its modal, so Back dismisses straight to the SportsFrame page.
+private struct SportFramePlayerPresenter: UIViewControllerRepresentable {
+    let channel: UnifiedChannel?
+    let onClose: () -> Void
+
+    final class Coordinator {
+        var openingChannelID: String?
+        var onClose: () -> Void
+
+        init(onClose: @escaping () -> Void) { self.onClose = onClose }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(onClose: onClose) }
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        let host = UIViewController()
+        host.view.backgroundColor = .clear
+        return host
+    }
+
+    func updateUIViewController(_ host: UIViewController, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.onClose = onClose
+        guard let channel, coordinator.openingChannelID != channel.id else { return }
+        coordinator.openingChannelID = channel.id
+        DispatchQueue.main.async {
+            guard host.view.window != nil, host.presentedViewController == nil else {
+                coordinator.openingChannelID = nil
+                return
+            }
+            let player = LiveTVAetherPlayerViewController(channel: channel)
+            player.modalPresentationStyle = .fullScreen
+            // No onMinimize: Back stops the stream instead of sending it to the guide.
+            player.onDismiss = { [weak coordinator] _ in
+                coordinator?.openingChannelID = nil
+                coordinator?.onClose()
+            }
+            host.present(player, animated: true)
+        }
     }
 }
 
