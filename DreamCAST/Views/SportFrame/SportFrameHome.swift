@@ -21,7 +21,7 @@ struct SportFrameHome: View {
     @State private var matchLeagueFilter = "All Leagues"
     @State private var selectedEvent: SportEvent?
     @State private var pendingPlayerChannel: UnifiedChannel?
-    @State private var channelMatchCounts: [String: Int] = [:]
+    @StateObject private var channelResolver = SportFrameBroadcastResolver()
     @FocusState private var focusedCard: String?
     @State private var premiumKeyInput = ""
     @State private var premiumKeySaved = SportsDBAccess.hasPremiumKey
@@ -260,28 +260,11 @@ struct SportFrameHome: View {
         .task(id: credentialRevision) {
             await catalog.refresh()
         }
-        .task(id: "match-counts-\(liveTVSourceID)-\(liveTV.channels.count)-\(fixtures.events.map(\.idEvent).joined(separator: "|"))-\(fixtures.nextDayEvents.map(\.idEvent).joined(separator: "|"))") {
-            // Build counts off the UI thread. Focus changes only read this small dictionary.
-            let names = sportFrameChannels.map(\.name)
-            let candidates = fixtures.events + fixtures.nextDayEvents
-            let terms = candidates.compactMap { event -> (String, String, String)? in
-                guard let home = event.strHomeTeam, let away = event.strAwayTeam else { return nil }
-                return (event.idEvent, home, away)
-            }
-            let counts = await Task.detached(priority: .utility) {
-                let normalized = names.map(ChannelMatcher.normalize)
-                var result: [String: Int] = [:]
-                for (eventID, home, away) in terms {
-                    let first = ChannelMatcher.normalize(home)
-                    let second = ChannelMatcher.normalize(away)
-                    guard first.count >= 4 && second.count >= 4 else { continue }
-                    result[eventID] = normalized.reduce(0) { count, name in
-                        count + (name.contains(first) && name.contains(second) ? 1 : 0)
-                    }
-                }
-                return result
-            }.value
-            if !Task.isCancelled { channelMatchCounts = counts }
+        .task(id: "broadcasts-\(liveTVSourceID)-\(liveTV.channels.count)-\(liveTV.epg.count)-\(fixtures.events.map(\.idEvent).joined(separator: "|"))-\(fixtures.nextDayEvents.map(\.idEvent).joined(separator: "|"))") {
+            await channelResolver.refresh(events: fixtures.events + fixtures.nextDayEvents,
+                                          channels: sportFrameChannels,
+                                          programs: liveTV.epg,
+                                          sourceID: liveTVSourceID)
         }
         .sheet(item: $selectedEvent, onDismiss: {
             if let channel = pendingPlayerChannel {
@@ -597,7 +580,7 @@ struct SportFrameHome: View {
             Text(event.name)
                 .font(.system(size: 18, weight: .semibold))
                 .fixedSize(horizontal: false, vertical: true)
-            let count = channelMatchCounts[event.idEvent] ?? 0
+            let count = channelResolver.channelIDs[event.idEvent]?.count ?? 0
             Text(count == 0 ? "Find channels" : "\(count) matching channels")
                 .font(.system(size: 15)).foregroundStyle(Color(white: 0.48))
         }
@@ -967,7 +950,10 @@ struct SportFrameHome: View {
     }
 
     private func eventChannels(_ event: SportEvent) -> some View {
-        let matches = ChannelMatcher.matching(event, in: sportFrameChannels)
+        let matchIDs = Set(channelResolver.channelIDs[event.idEvent] ?? [])
+        let matches = matchIDs.isEmpty
+            ? ChannelMatcher.matching(event, in: sportFrameChannels)
+            : sportFrameChannels.filter { matchIDs.contains($0.id) }
         return ZStack {
             SportFrameCinematicBackdrop().ignoresSafeArea()
             VStack {
@@ -1010,6 +996,151 @@ struct SportFrameHome: View {
             .frame(maxWidth: .infinity, minHeight: 130, alignment: .leading)
             .padding(25)
             .sportFrameGlassPanel(radius: 16)
+    }
+}
+
+// Stores broadcaster names by event and reusable provider-to-playlist links.
+// Heavy EPG scans run off the main actor and never run during remote focus moves.
+@MainActor
+private final class SportFrameBroadcastResolver: ObservableObject {
+    @Published private(set) var channelIDs: [String: [String]] = [:]
+
+    private struct BroadcastEntry: Codable {
+        var names: [String]
+        var fetchedAt: Date
+    }
+
+    private struct SavedIndex: Codable {
+        var broadcasts: [String: BroadcastEntry] = [:]
+        var aliases: [String: [String]] = [:]
+    }
+
+    private static let cacheKey = "sportFrameBroadcastIndexV1"
+    private var index: SavedIndex = {
+        guard let data = UserDefaults.standard.data(forKey: "sportFrameBroadcastIndexV1"),
+              let decoded = try? JSONDecoder().decode(SavedIndex.self, from: data) else { return SavedIndex() }
+        return decoded
+    }()
+
+    private func save() {
+        if let data = try? JSONEncoder().encode(index) {
+            UserDefaults.standard.set(data, forKey: Self.cacheKey)
+        }
+    }
+
+    func refresh(events: [SportEvent], channels: [UnifiedChannel],
+                 programs: [String: [UnifiedProgram]], sourceID: String) async {
+        guard !events.isEmpty, !channels.isEmpty else {
+            channelIDs = [:]
+            return
+        }
+
+        // One lookup per event, reused across future days. Only a small batch
+        // is fetched on each refresh to respect API limits.
+        let now = Date()
+        var requested = 0
+        for event in events {
+            if Task.isCancelled { return }
+            if let cached = index.broadcasts[event.idEvent],
+               now.timeIntervalSince(cached.fetchedAt) < 12 * 3600 { continue }
+            guard requested < 12 else { break }
+            requested += 1
+            let names = await fetchBroadcasters(eventID: event.idEvent)
+            if Task.isCancelled { return }
+            index.broadcasts[event.idEvent] = BroadcastEntry(names: names, fetchedAt: Date())
+        }
+        if requested > 0 { save() }
+
+        let broadcasts = index.broadcasts.mapValues(\.names)
+        let savedAliases = index.aliases
+        let eventTerms = events.map { event in
+            (id: event.idEvent, home: event.strHomeTeam ?? "",
+             away: event.strAwayTeam ?? "", start: event.startDate)
+        }
+        // UnifiedChannel and UnifiedProgram are Sendable. Keep all string scans
+        // away from the tvOS focus and rendering thread.
+        let resolved = await Task.detached(priority: .background) { () -> ([String: [String]], [String: [String]]) in
+            let namedChannels = channels.map { (id: $0.id, name: ChannelMatcher.normalize($0.name)) }
+            let validIDs = Set(channels.map(\.id))
+            var results: [String: [String]] = [:]
+            var aliases = savedAliases
+
+            for event in eventTerms {
+                if Task.isCancelled { break }
+                var ids = Set<String>()
+
+                // Primary: official broadcast channel names from TheSportsDB.
+                for broadcaster in broadcasts[event.id] ?? [] {
+                    let broadcast = ChannelMatcher.normalize(broadcaster)
+                    guard broadcast.count >= 3 else { continue }
+                    let aliasKey = sourceID + "|" + broadcast
+                    ids.formUnion((aliases[aliasKey] ?? []).filter { validIDs.contains($0) })
+                    let direct = namedChannels.filter { channel in
+                        let padded = " " + channel.name + " "
+                        return padded.contains(" " + broadcast + " ")
+                    }.map(\.id)
+                    ids.formUnion(direct)
+                    if !direct.isEmpty { aliases[aliasKey] = direct }
+                }
+
+                // Secondary: use current guide titles near the match start.
+                if ids.isEmpty {
+                    let home = ChannelMatcher.normalize(event.home)
+                    let away = ChannelMatcher.normalize(event.away)
+                    if home.count >= 4 && away.count >= 4 {
+                        for (channelID, guide) in programs where validIDs.contains(channelID) {
+                            if guide.contains(where: { program in
+                                if let start = event.start {
+                                    guard program.startTime < start.addingTimeInterval(3 * 3600),
+                                          program.endTime > start.addingTimeInterval(-2 * 3600) else { return false }
+                                }
+                                let title = ChannelMatcher.normalize(program.title)
+                                return title.contains(home) && title.contains(away)
+                            }) {
+                                ids.insert(channelID)
+                            }
+                        }
+                    }
+                }
+
+                // Last resort for event-specific PPV channels with no EPG.
+                if ids.isEmpty {
+                    let home = ChannelMatcher.normalize(event.home)
+                    let away = ChannelMatcher.normalize(event.away)
+                    if home.count >= 4 && away.count >= 4 {
+                        ids.formUnion(namedChannels.filter {
+                            $0.name.contains(home) && $0.name.contains(away)
+                        }.map(\.id))
+                    }
+                }
+                results[event.id] = channels.map(\.id).filter { ids.contains($0) }
+            }
+            return (results, aliases)
+        }.value
+        guard !Task.isCancelled else { return }
+        channelIDs = resolved.0
+        if index.aliases != resolved.1 {
+            index.aliases = resolved.1
+            save()
+        }
+    }
+
+    private func fetchBroadcasters(eventID: String) async -> [String] {
+        guard let url = URL(string: "https://www.thesportsdb.com/api/v1/json/\(SportsDBAccess.apiKey)/lookuptv.php?id=\(eventID)") else {
+            return []
+        }
+        do {
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 8
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard (response as? HTTPURLResponse)?.statusCode == 200,
+                  let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let rows = payload["tvevent"] as? [[String: Any]] else { return [] }
+            return Array(Set(rows.compactMap { $0["strChannel"] as? String }
+                .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })).sorted()
+        } catch {
+            return []
+        }
     }
 }
 
