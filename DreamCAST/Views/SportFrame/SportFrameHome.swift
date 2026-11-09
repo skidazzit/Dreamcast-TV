@@ -27,7 +27,6 @@ struct SportFrameHome: View {
 
     private let fallbackSports = ["Soccer", "Basketball", "American Football", "Tennis", "Motorsport", "Ice Hockey", "Cricket", "Baseball", "Rugby", "Golf"]
     private let accent = Color(red: 0.0, green: 0.8, blue: 0.94)
-    private let panel = Color(white: 0.105)
     private let allSports = "All Sports"
     private let allLeagueFilter = "All Leagues"
 
@@ -133,8 +132,8 @@ struct SportFrameHome: View {
                             navigation("Settings", index: 2, symbol: "gearshape")
                         }
                         .padding(6)
-                        .background(Color(white: 0.13), in: Capsule())
-                        .overlay(Capsule().stroke(Color.white.opacity(0.13), lineWidth: 1))
+                        .background(.ultraThinMaterial, in: Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.17), lineWidth: 1))
                         Spacer()
                     }
                     switch tab {
@@ -188,25 +187,28 @@ struct SportFrameHome: View {
     }
 
     private func navigation(_ label: String, index: Int, symbol: String) -> some View {
-        Button { tab = index } label: {
+        let focused = focusedCard == "nav-\(index)"
+        return Button { tab = index } label: {
             HStack(spacing: 9) {
                 if index == 2 { Image(systemName: symbol) }
                 Text(label)
             }
             .font(.system(size: 23, weight: tab == index ? .bold : .medium))
-            .foregroundStyle(.white)
+            .foregroundStyle(focused ? Color.black : Color.white)
             .padding(.horizontal, 27)
             .padding(.vertical, 12)
-            .background(tab == index ? Color(white: 0.035) : Color.clear, in: Capsule())
+            .background(focused ? Color.white : tab == index ? Color.white.opacity(0.17) : Color.clear, in: Capsule())
         }
         .buttonStyle(SportFrameArtworkButtonStyle())
         .focusEffectDisabled()
         .focused($focusedCard, equals: "nav-\(index)")
         .overlay {
             Capsule()
-                .stroke(focusedCard == "nav-\(index)" ? Color.white : Color.clear, lineWidth: 2)
+                .stroke(focused ? Color.white : Color.clear, lineWidth: 2)
                 .allowsHitTesting(false)
         }
+        .scaleEffect(focused ? 1.045 : 1)
+        .animation(.spring(response: 0.25, dampingFraction: 0.8), value: focused)
     }
 
     private var matchesPage: some View {
@@ -218,26 +220,25 @@ struct SportFrameHome: View {
                         Button(sport) { matchSportFilter = sport; matchLeagueFilter = allLeagueFilter }
                     }
                 } label: { Label(matchSportFilter, systemImage: "sportscourt") }
-                .buttonStyle(.bordered)
+                .buttonStyle(SportFrameGlassControlStyle())
                 Menu {
                     Button(allLeagueFilter) { matchLeagueFilter = allLeagueFilter }
                     ForEach(filterLeagues, id: \.self) { league in
                         Button(league) { matchLeagueFilter = league }
                     }
                 } label: { Label(matchLeagueFilter, systemImage: "list.bullet") }
-                .buttonStyle(.bordered)
+                .buttonStyle(SportFrameGlassControlStyle())
                 HStack(spacing: 8) {
                     ForEach(-1...3, id: \.self) { offset in
                         Button(offset == 0 ? "Today" : offset == -1 ? "Yesterday" : "+\(offset)d") { dayOffset = offset }
-                            .buttonStyle(.bordered)
-                            .tint(dayOffset == offset ? accent : .gray)
+                            .buttonStyle(SportFrameGlassControlStyle(selected: dayOffset == offset))
                     }
                 }
                 Spacer()
                 Button { refreshRevision += 1 } label: { Image(systemName: "arrow.clockwise") }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(SportFrameGlassControlStyle())
                 Button { tab = 2 } label: { Image(systemName: "slider.horizontal.3") }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(SportFrameGlassControlStyle())
             }
             if followedSports.isEmpty {
                 emptyPanel("Select sports in Setup to see matches.")
@@ -393,7 +394,7 @@ struct SportFrameHome: View {
         }
         .padding(20)
         .frame(width: 430, alignment: .topLeading)
-        .background(panel, in: RoundedRectangle(cornerRadius: 19))
+        .sportFrameGlassPanel(radius: 19)
         .task(id: "badge-\(sport)-\(title)") {
             await catalog.loadBadge(for: title, sport: sport)
         }
@@ -632,7 +633,7 @@ struct SportFrameHome: View {
                         Spacer()
                     }
                     .padding(20)
-                    .background(panel, in: RoundedRectangle(cornerRadius: 16))
+                    .sportFrameGlassPanel(radius: 16)
                 }
                 .buttonStyle(.plain)
             }
@@ -685,7 +686,7 @@ struct SportFrameHome: View {
                     .padding(28)
             }
         }
-        .background(panel, in: RoundedRectangle(cornerRadius: 20))
+        .sportFrameGlassPanel(radius: 20)
     }
 
     private var premiumSettings: some View {
@@ -766,12 +767,59 @@ struct SportFrameHome: View {
         Text(text).foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, minHeight: 130, alignment: .leading)
             .padding(25)
-            .background(panel, in: RoundedRectangle(cornerRadius: 16))
+            .sportFrameGlassPanel(radius: 16)
     }
 }
 
 // A plain tvOS button can draw a large white focus plate over nearby titles.
 // This style leaves focus drawing to the artwork outline above.
+private struct SportFrameGlassControlStyle: ButtonStyle {
+    var selected = false
+    @FocusState private var isFocused: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 19, weight: selected ? .semibold : .medium))
+            .foregroundStyle(isFocused ? Color.black : Color.white)
+            .padding(.horizontal, 19)
+            .padding(.vertical, 12)
+            .background(isFocused ? Color.white : Color.white.opacity(selected ? 0.22 : 0.09),
+                        in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .background(.ultraThinMaterial,
+                        in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(Color.white.opacity(isFocused ? 0 : 0.16), lineWidth: 1)
+            }
+            .focused($isFocused)
+            .focusEffectDisabled()
+            .scaleEffect(configuration.isPressed ? 0.96 : isFocused ? 1.06 : 1)
+            .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isFocused)
+    }
+}
+
+private struct SportFrameGlassPanelModifier: ViewModifier {
+    let radius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .background(.ultraThinMaterial,
+                        in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .background(Color.white.opacity(0.05),
+                        in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .stroke(Color.white.opacity(0.14), lineWidth: 1)
+            }
+    }
+}
+
+private extension View {
+    func sportFrameGlassPanel(radius: CGFloat) -> some View {
+        modifier(SportFrameGlassPanelModifier(radius: radius))
+    }
+}
+
 private struct SportFrameArtworkButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
