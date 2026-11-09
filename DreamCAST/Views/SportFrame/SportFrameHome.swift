@@ -121,7 +121,7 @@ struct SportFrameHome: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            SportFrameCinematicBackdrop().ignoresSafeArea()
             ScrollView {
                 VStack(alignment: .leading, spacing: 52) {
                     HStack {
@@ -143,7 +143,7 @@ struct SportFrameHome: View {
                     }
                 }
                 .padding(.horizontal, 28)
-                .padding(.top, 24)
+                .padding(.top, 30)
                 .padding(.bottom, 90)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -212,7 +212,7 @@ struct SportFrameHome: View {
     }
 
     private var matchesPage: some View {
-        VStack(alignment: .leading, spacing: 74) {
+        VStack(alignment: .leading, spacing: 58) {
             HStack(spacing: 16) {
                 Menu {
                     Button(allSports) { matchSportFilter = allSports; matchLeagueFilter = allLeagueFilter }
@@ -263,13 +263,15 @@ struct SportFrameHome: View {
 
     private func matchShelf(_ title: String, events: [SportEvent]) -> some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text(title).font(.system(size: 29, weight: .semibold)).foregroundStyle(Color(white: 0.7))
+            Text(title).font(.system(size: 29, weight: .semibold)).foregroundStyle(Color.white.opacity(0.88))
             if events.isEmpty {
                 Text(title == "Happening now" ? "No matches marked live by the provider. Use Refresh to check again." :
                      title == "Coming up" ? "No upcoming matches on this date. Choose +1d to see tomorrow's schedule." :
                      "No \(title.lowercased()) matches found.")
-                    .foregroundStyle(.secondary)
-                    .padding(.vertical, 12)
+                    .foregroundStyle(.white.opacity(0.65))
+                    .padding(22)
+                    .frame(maxWidth: .infinity, minHeight: 94, alignment: .leading)
+                    .sportFrameGlassPanel(radius: 18)
             } else {
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: 18) {
@@ -282,7 +284,7 @@ struct SportFrameHome: View {
     }
 
     private var leagueSummarySection: some View {
-        VStack(alignment: .leading, spacing: 72) {
+        VStack(alignment: .leading, spacing: 60) {
             ForEach(filteredSports.filter { sport in
                 filteredMatches.contains { fixtures.eventSports[$0.idEvent] == sport }
             }, id: \.self) { sport in
@@ -306,7 +308,7 @@ struct SportFrameHome: View {
             if !events.isEmpty {
                 Text("\(sport) ›")
                     .font(.system(size: 29, weight: .semibold))
-                    .foregroundStyle(Color(white: 0.7))
+                    .foregroundStyle(Color.white.opacity(0.88))
             }
             ScrollView(.horizontal) {
                 LazyHStack(alignment: .top, spacing: 18) {
@@ -462,6 +464,8 @@ struct SportFrameHome: View {
             .buttonStyle(SportFrameArtworkButtonStyle())
             .focusEffectDisabled()
             .focused($focusedCard, equals: "match-\(event.idEvent)")
+            .scaleEffect(focusedCard == "match-\(event.idEvent)" ? 1.035 : 1)
+            .animation(.spring(response: 0.25, dampingFraction: 0.82), value: focusedCard == "match-\(event.idEvent)")
             .overlay {
                 RoundedRectangle(cornerRadius: 14)
                     .stroke(focusedCard == "match-\(event.idEvent)" ? Color.white : Color.clear, lineWidth: 3)
@@ -519,7 +523,7 @@ struct SportFrameHome: View {
                 Button("Select all") { followedSportsValue = sportOrder.joined(separator: "|") }
                 Button("Unselect all") { followedSportsValue = "" }
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(SportFrameGlassControlStyle())
             if let message = catalog.message {
                 Text(message).font(.caption).foregroundStyle(.orange)
             }
@@ -536,16 +540,16 @@ struct SportFrameHome: View {
                         Button { expandedSport = expandedSport == sport ? nil : sport } label: {
                             Image(systemName: expandedSport == sport ? "chevron.down" : "chevron.right")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(SportFrameGlassControlStyle())
                         Button { moveSport(sport, by: -1) } label: {
                             Image(systemName: "arrow.up")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(SportFrameGlassControlStyle())
                         .disabled(sportOrder.first == sport)
                         Button { moveSport(sport, by: 1) } label: {
                             Image(systemName: "arrow.down")
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(SportFrameGlassControlStyle())
                         .disabled(sportOrder.last == sport)
                     }
                     .padding(.vertical, 15)
@@ -566,7 +570,7 @@ struct SportFrameHome: View {
                                     saveLeagueSelections(choices)
                                 }
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(SportFrameGlassControlStyle())
                             if leagueNames.isEmpty {
                                 Text("No leagues returned. Premium access provides more league data.")
                                     .foregroundStyle(.secondary)
@@ -642,7 +646,7 @@ struct SportFrameHome: View {
 
     private var setupPage: some View {
         VStack(alignment: .leading, spacing: 20) {
-            Text("SportFrame Settings").font(.system(size: 42, weight: .bold, design: .rounded))
+            Text("SportFrame Settings").font(.system(size: 42, weight: .bold))
             Text("Manage your sports, data access, and TV channels.")
                 .font(.title3).foregroundStyle(.secondary)
             settingsSection("Which sports do you follow?", subtitle: "\(followedSports.count) sports selected · choose leagues and order", icon: "sportscourt", key: "sports") {
@@ -706,7 +710,7 @@ struct SportFrameHome: View {
                         credentialMessage = "Could not save key. Use the API key from your TheSportsDB profile."
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(SportFrameGlassControlStyle(selected: true))
                 Button("Use Free Access") {
                     SportsDBAccess.remove()
                     premiumKeyInput = ""
@@ -714,7 +718,7 @@ struct SportFrameHome: View {
                     credentialRevision += 1
                     credentialMessage = "Premium key removed. Free access is active."
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(SportFrameGlassControlStyle())
                 .disabled(!premiumKeySaved)
             }
             if let credentialMessage {
@@ -741,7 +745,7 @@ struct SportFrameHome: View {
     private func eventChannels(_ event: SportEvent) -> some View {
         let matches = ChannelMatcher.matching(event, in: liveTV.channels)
         return ZStack {
-            Color(red: 0.025, green: 0.03, blue: 0.05).ignoresSafeArea()
+            SportFrameCinematicBackdrop().ignoresSafeArea()
             ScrollView {
                 VStack(alignment: .leading, spacing: 25) {
                     HStack {
@@ -768,6 +772,30 @@ struct SportFrameHome: View {
             .frame(maxWidth: .infinity, minHeight: 130, alignment: .leading)
             .padding(25)
             .sportFrameGlassPanel(radius: 16)
+    }
+}
+
+private struct SportFrameCinematicBackdrop: View {
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                LinearGradient(
+                    colors: [Color(red: 0.025, green: 0.045, blue: 0.085),
+                             Color(red: 0.01, green: 0.013, blue: 0.027),
+                             Color(red: 0.065, green: 0.024, blue: 0.045)],
+                    startPoint: .topLeading, endPoint: .bottomTrailing)
+                Circle()
+                    .fill(Color.cyan.opacity(0.12))
+                    .frame(width: geometry.size.width * 0.55)
+                    .blur(radius: 150)
+                    .offset(x: -geometry.size.width * 0.42, y: -geometry.size.height * 0.28)
+                Circle()
+                    .fill(Color(red: 1, green: 0.30, blue: 0.24).opacity(0.08))
+                    .frame(width: geometry.size.width * 0.5)
+                    .blur(radius: 155)
+                    .offset(x: geometry.size.width * 0.44, y: geometry.size.height * 0.34)
+            }
+        }
     }
 }
 
