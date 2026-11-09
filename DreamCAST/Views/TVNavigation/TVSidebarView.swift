@@ -1038,6 +1038,8 @@ private struct DreamCASTStartupSplash: View {
     let progress: Double
     let playlistStatus: LiveTVDataStore.PlaylistFetchStatus?
     @State private var isAnimating = false
+    @State private var logoRevealed = false
+    @State private var logoGlowing = false
 
     private let turquoise = Color(red: 0.04, green: 0.84, blue: 0.75)
     private let amber = Color(red: 1, green: 0.64, blue: 0.22)
@@ -1073,8 +1075,13 @@ private struct DreamCASTStartupSplash: View {
                     .frame(width: 620, height: 372)
                     .clipped()
                     .blendMode(.screen)
-                    .scaleEffect(isAnimating ? 1.025 : 0.98)
-                    .shadow(color: turquoise.opacity(0.18), radius: 48)
+                    .opacity(logoRevealed ? 1 : 0)
+                    .scaleEffect(logoRevealed ? (logoGlowing ? 1.03 : 1) : 0.82)
+                    .offset(y: logoRevealed ? 0 : 28)
+                    .blur(radius: logoRevealed ? 0 : 12)
+                    .shadow(color: turquoise.opacity(logoGlowing ? 0.32 : 0.12),
+                            radius: logoGlowing ? 55 : 25)
+                    .animation(.spring(response: 0.95, dampingFraction: 0.78), value: logoRevealed)
                     .accessibilityHidden(true)
                 Text("Getting everything ready to watch")
                     .font(.system(size: 28))
@@ -1117,6 +1124,12 @@ private struct DreamCASTStartupSplash: View {
         .onAppear {
             withAnimation(.easeInOut(duration: 4).repeatForever(autoreverses: true)) {
                 isAnimating = true
+            }
+            withAnimation(.spring(response: 0.95, dampingFraction: 0.78)) {
+                logoRevealed = true
+            }
+            withAnimation(.easeInOut(duration: 2.8).repeatForever(autoreverses: true)) {
+                logoGlowing = true
             }
         }
         .accessibilityElement(children: .combine)
