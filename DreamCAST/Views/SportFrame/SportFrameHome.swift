@@ -330,9 +330,11 @@ struct SportFrameHome: View {
     }
 
     private func sportLeagueCard(title: String, sport: String, events: [SportEvent]) -> some View {
-        VStack(alignment: .leading, spacing: 15) {
+        let leagueID = events.compactMap(\.idLeague).first
+        let badge = events.compactMap(\.leagueBadge).first ?? catalog.badgeURL(for: title, sport: sport, idLeague: leagueID)
+        return VStack(alignment: .leading, spacing: 15) {
             HStack(spacing: 9) {
-                if let badge = catalog.badgeURL(for: title, sport: sport) {
+                if let badge {
                     AsyncImage(url: badge) { image in
                         image.resizable().scaledToFit()
                     } placeholder: {
@@ -397,8 +399,8 @@ struct SportFrameHome: View {
         .padding(20)
         .frame(width: 430, alignment: .topLeading)
         .sportFrameGlassPanel(radius: 19)
-        .task(id: "badge-\(sport)-\(title)") {
-            await catalog.loadBadge(for: title, sport: sport)
+        .task(id: "badge-\(sport)-\(leagueID ?? title)") {
+            if badge == nil { await catalog.loadBadge(for: title, sport: sport, idLeague: leagueID) }
         }
     }
 
