@@ -1,10 +1,12 @@
 import SwiftUI
+import UIKit
 
 struct SportFrameHome: View {
     let onTune: (UnifiedChannel) -> Void
     @StateObject private var fixtures = FixtureStore()
     @StateObject private var catalog = SportFrameCatalog()
     @StateObject private var liveTV = LiveTVDataStore.shared
+    @StateObject private var teamPalettes = SportFrameTeamPaletteStore()
     @State private var tab = 0
     @AppStorage("sportFrameFollowedSportsV2") private var followedSportsValue = "Soccer|Basketball|American Football"
     @AppStorage("sportFrameSportOrderV2") private var sportOrderValue = "Soccer|Basketball|American Football|Tennis|Motorsport|Ice Hockey|Cricket"
@@ -419,21 +421,25 @@ struct SportFrameHome: View {
         let live = isLive(event)
         return VStack(alignment: .leading, spacing: 9) {
             Button { selectedEvent = event } label: {
-                VStack(alignment: .leading, spacing: 13) {
-                    HStack {
-                        Text(event.league).font(.caption.bold()).lineLimit(1)
-                        Spacer()
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(event.league)
+                            .font(.system(size: 15, weight: .semibold))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .layoutPriority(1)
+                        Spacer(minLength: 0)
                         Text(live ? "● LIVE" : event.isUpcoming ? "SOON" : event.startDate == nil ? "SCHEDULED" : "RESULT")
                             .font(.system(size: 15, weight: .bold))
                             .padding(.horizontal, 10).padding(.vertical, 5)
                             .background(live ? Color.red : Color.blue, in: Capsule())
+                            .fixedSize()
                     }
                     Spacer(minLength: 0)
                     HStack(spacing: 12) {
                         matchBadge(event.homeBadge)
                         Spacer(minLength: 0)
                         Text(fixtures.score(for: event).home.map { "\($0) – \(fixtures.score(for: event).away ?? "–")" } ?? event.timeLabel)
-                            .font(.system(size: 27, weight: .bold)).lineLimit(1).minimumScaleFactor(0.7)
+                            .font(.system(size: 25, weight: .bold)).lineLimit(1).minimumScaleFactor(0.6)
                         Spacer(minLength: 0)
                         matchBadge(event.awayBadge)
                     }
@@ -447,8 +453,9 @@ struct SportFrameHome: View {
                     }
                 }
                 .padding(13)
-                .frame(width: 330, height: 184)
-                .background(LinearGradient(colors: [Color(red: 0.08, green: 0.19, blue: 0.42), Color(red: 0.47, green: 0.08, blue: 0.17)], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 14))
+                .frame(width: 330)
+                .frame(minHeight: 184)
+                .background { matchCardBackdrop(home: event.homeBadge, away: event.awayBadge) }
             }
             .buttonStyle(SportFrameArtworkButtonStyle())
             .focusEffectDisabled()
@@ -457,6 +464,9 @@ struct SportFrameHome: View {
                 RoundedRectangle(cornerRadius: 14)
                     .stroke(focusedCard == "match-\(event.idEvent)" ? Color.white : Color.clear, lineWidth: 3)
                     .allowsHitTesting(false)
+            }
+            .task(id: "palette-\(event.idEvent)") {
+                await teamPalettes.prepare(home: event.homeBadge, away: event.awayBadge)
             }
             Text(event.name)
                 .font(.system(size: 18, weight: .semibold))
@@ -472,7 +482,31 @@ struct SportFrameHome: View {
         AsyncImage(url: url) { image in image.resizable().scaledToFit() } placeholder: {
             Image(systemName: "shield.fill").foregroundStyle(.white.opacity(0.7))
         }
+        .padding(5)
         .frame(width: 65, height: 65)
+        .background(.white.opacity(0.11), in: Circle())
+    }
+
+    private func matchCardBackdrop(home: URL?, away: URL?) -> some View {
+        GeometryReader { geometry in
+            let left = teamPalettes.color(for: home, fallback: Color(red: 0.08, green: 0.19, blue: 0.42))
+            let right = teamPalettes.color(for: away, fallback: Color(red: 0.47, green: 0.08, blue: 0.17))
+            ZStack {
+                right
+                Color.black.opacity(0.12)
+                Path { path in
+                    path.move(to: .zero)
+                    path.addLine(to: CGPoint(x: geometry.size.width * 0.57, y: 0))
+                    path.addLine(to: CGPoint(x: geometry.size.width * 0.34, y: geometry.size.height))
+                    path.addLine(to: CGPoint(x: 0, y: geometry.size.height))
+                    path.closeSubpath()
+                }
+                .fill(left)
+                LinearGradient(colors: [.white.opacity(0.07), .clear, .black.opacity(0.18)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+        }
     }
 
     private var sportLeagueSettings: some View {
@@ -564,7 +598,7 @@ struct SportFrameHome: View {
                 Image(systemName: "shield").foregroundStyle(.secondary)
             }
             .frame(width: 48, height: 48)
-            Text(name).font(.headline).lineLimit(1)
+            Text(name).font(.headline).fixedSize(horizontal: false, vertical: true)
             Spacer()
             if let score { Text(score).font(.title2.bold()) }
         }
@@ -590,8 +624,9 @@ struct SportFrameHome: View {
                         }
                         .frame(width: 68, height: 62)
                         VStack(alignment: .leading) {
-                            Text(channel.name).font(.headline).lineLimit(2)
-                            Text(channel.groupTitle ?? "Live TV").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            Text(channel.name).font(.headline).fixedSize(horizontal: false, vertical: true)
+                            Text(channel.groupTitle ?? "Live TV").font(.caption).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         Spacer()
                     }
@@ -740,5 +775,81 @@ private struct SportFrameArtworkButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.99 : 1)
+    }
+}
+
+@MainActor
+private final class SportFrameTeamPaletteStore: ObservableObject {
+    @Published private var badgeColors: [URL: Color] = [:]
+    private var requested = Set<URL>()
+
+    func color(for badge: URL?, fallback: Color) -> Color {
+        guard let badge else { return fallback }
+        return badgeColors[badge] ?? fallback
+    }
+
+    func prepare(home: URL?, away: URL?) async {
+        if let home { await loadColor(from: home) }
+        if Task.isCancelled { return }
+        if let away { await loadColor(from: away) }
+    }
+
+    private func loadColor(from url: URL) async {
+        guard requested.insert(url).inserted else { return }
+        do {
+            var request = URLRequest(url: url)
+            request.cachePolicy = .returnCacheDataElseLoad
+            let (data, _) = try await URLSession.shared.data(for: request)
+            guard !Task.isCancelled else { requested.remove(url); return }
+            if let color = Self.extractAccent(from: data) { badgeColors[url] = color }
+        } catch {
+            requested.remove(url)
+        }
+    }
+
+    private static func extractAccent(from data: Data) -> Color? {
+        guard let image = UIImage(data: data)?.cgImage else { return nil }
+        let side = 40
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        let rendered = pixels.withUnsafeMutableBytes { buffer -> Bool in
+            let bitmapInfo = CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue
+            guard let context = CGContext(data: buffer.baseAddress, width: side, height: side,
+                                          bitsPerComponent: 8, bytesPerRow: side * 4,
+                                          space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: bitmapInfo) else { return false }
+            context.interpolationQuality = .low
+            context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
+            return true
+        }
+        guard rendered else { return nil }
+
+        // Pick the strongest colorful group. Ignore transparent and pale edges.
+        var weights = [Double](repeating: 0, count: 24)
+        var hues = [Double](repeating: 0, count: 24)
+        var saturations = [Double](repeating: 0, count: 24)
+        for offset in stride(from: 0, to: pixels.count, by: 4) {
+            let alpha = Double(pixels[offset + 3]) / 255.0
+            if alpha < 0.55 { continue }
+            let red = CGFloat(pixels[offset]) / 255.0
+            let green = CGFloat(pixels[offset + 1]) / 255.0
+            let blue = CGFloat(pixels[offset + 2]) / 255.0
+            var hue: CGFloat = 0
+            var saturation: CGFloat = 0
+            var brightness: CGFloat = 0
+            var opacity: CGFloat = 0
+            UIColor(red: red, green: green, blue: blue, alpha: 1)
+                .getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &opacity)
+            if saturation < 0.28 || brightness < 0.16 || brightness > 0.94 { continue }
+            let bucket = min(23, Int(Double(hue) * 24))
+            let weight = alpha * Double(saturation * saturation)
+            weights[bucket] += weight
+            hues[bucket] += Double(hue) * weight
+            saturations[bucket] += Double(saturation) * weight
+        }
+        guard let strongest = weights.indices.max(by: { weights[$0] < weights[$1] }),
+              weights[strongest] > 0.25 else { return nil }
+        let hue = hues[strongest] / weights[strongest]
+        let saturation = min(0.82, max(0.56, saturations[strongest] / weights[strongest]))
+        // Darken logo colors so white labels stay readable on both halves.
+        return Color(hue: hue, saturation: saturation, brightness: 0.37)
     }
 }
