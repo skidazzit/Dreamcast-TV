@@ -753,6 +753,44 @@ struct SportFrameHome: View {
         .focusSection()
     }
 
+    private func matchChannelList(_ channels: [UnifiedChannel]) -> some View {
+        LazyVStack(spacing: 12) {
+            ForEach(channels) { channel in
+                Button { playSportFrameChannel(channel) } label: {
+                    HStack(spacing: 20) {
+                        AsyncImage(url: channel.logoURL) { image in
+                            image.resizable().scaledToFit()
+                        } placeholder: {
+                            Image(systemName: "tv").foregroundStyle(.secondary)
+                        }
+                        .frame(width: 76, height: 58)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(channel.name)
+                                .font(.title3.weight(.semibold))
+                                .fixedSize(horizontal: false, vertical: true)
+                                .multilineTextAlignment(.leading)
+                            Text(channel.groupTitle ?? "Live TV")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Spacer(minLength: 12)
+                        Image(systemName: "play.fill")
+                            .foregroundStyle(accent)
+                    }
+                    .padding(.horizontal, 22)
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .sportFrameGlassPanel(radius: 16)
+                }
+                .buttonStyle(SportFrameArtworkButtonStyle())
+                .focused($focusedCard, equals: "event-channel-\(channel.id)")
+                .sportFrameFocusOutline(focusedCard == "event-channel-\(channel.id)", radius: 16)
+            }
+        }
+        .focusSection()
+    }
+
     private var setupPage: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("SportFrame Settings").font(.system(size: 42, weight: .bold))
@@ -884,7 +922,7 @@ struct SportFrameHome: View {
                                 .focused($focusedCard, equals: "event-all-channels")
                                 .sportFrameFocusOutline(focusedCard == "event-all-channels")
                         } else {
-                            channelGrid(matches, columns: 2)
+                            matchChannelList(matches)
                         }
                     }
                     .padding(34)
