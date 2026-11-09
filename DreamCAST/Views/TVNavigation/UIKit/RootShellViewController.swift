@@ -95,6 +95,7 @@ final class RootShellViewController: UIViewController {
     private var sidebarExitGesture: Int?
     /// Remote gesture that last moved focus within content, so an Up run stops short of the sidebar.
     private var contentMoveGesture: Int?
+    private var deferredFocusRequestPending = false
 
     // MARK: Lifecycle
 
@@ -267,6 +268,19 @@ final class RootShellViewController: UIViewController {
         }
     }
 
+    // Defer focus changes triggered by didUpdateFocus until tvOS finishes that update.
+    private func requestFocusAfterCurrentUpdate() {
+        guard !deferredFocusRequestPending else { return }
+        deferredFocusRequestPending = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.deferredFocusRequestPending = false
+            guard self.isViewLoaded, self.view.window != nil else { return }
+            self.setNeedsFocusUpdate()
+            self.updateFocusIfNeeded()
+        }
+    }
+
     // MARK: Sidebar chrome
 
     private func expandSidebar(aimAt tab: SidebarTab? = nil) {
@@ -274,16 +288,14 @@ final class RootShellViewController: UIViewController {
         sidebarExitGesture = nil
         sidebar.setExpanded(true, animated: true, aimAt: tab)
         updateChromeVisibility()
-        setNeedsFocusUpdate()
-        updateFocusIfNeeded()
+        requestFocusAfterCurrentUpdate()
     }
 
     private func collapseSidebar() {
         guard sidebar.isExpanded else { return }
         sidebar.setExpanded(false, animated: true)
         updateChromeVisibility()
-        setNeedsFocusUpdate()
-        updateFocusIfNeeded()
+        requestFocusAfterCurrentUpdate()
         // The mount's retry bailed while the sidebar was open; run it now so a
         // still-loading page arms the edge catcher.
         if !contentHasHadFocus { driveFocusIntoContent() }
@@ -396,16 +408,14 @@ final class RootShellViewController: UIViewController {
                 expandSidebar()
             } else {
                 // Spurious landing (launch search); bounce back to content.
-                setNeedsFocusUpdate()
-                updateFocusIfNeeded()
+                requestFocusAfterCurrentUpdate()
             }
             return
         }
         // The profile panel hands focus back to the content it left it in, after
         // the sidebar has reopened: pull it into the sidebar.
         if sidebar.isExpanded, isInsideContent(next) {
-            setNeedsFocusUpdate()
-            updateFocusIfNeeded()
+            requestFocusAfterCurrentUpdate()
             return
         }
         if isInsideContent(context.previouslyFocusedItem), isInsideContent(next) {
