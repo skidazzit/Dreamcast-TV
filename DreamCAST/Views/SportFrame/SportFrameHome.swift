@@ -76,7 +76,7 @@ struct SportFrameHome: View {
     }
 
     private func isLive(_ event: SportEvent) -> Bool {
-        event.isLive
+        dayOffset == 0 ? fixtures.isLive(event) : event.isLive
     }
 
     private var filterLeagues: [String] {
@@ -147,7 +147,34 @@ struct SportFrameHome: View {
             }
         }
         .task(id: "\(followedSportsValue)-\(sportOrderValue)-\(dayOffset)-\(credentialRevision)-\(refreshRevision)") {
-            await fixtures.fetch(sports: followedSports, date: Calendar.current.date(byAdding: .day, value: dayOffset, to: Date()) ?? Date())
+            await fixtures.fetch(sports: followedSports,
+                                 date: Calendar.current.date(byAdding: .day, value: dayOffset, to: Date()) ?? Date(),
+                                 quietly: !fixtures.events.isEmpty)
+        }
+        .task(id: "live-\(credentialRevision)-\(dayOffset)-\(refreshRevision)") {
+            guard dayOffset == 0, SportsDBAccess.hasPremiumKey else { return }
+            await fixtures.refreshLiveScores()
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(120)) } catch { break }
+                if Task.isCancelled { break }
+                await fixtures.refreshLiveScores()
+            }
+        }
+        .task(id: "scores-\(followedSportsValue)-\(dayOffset)-\(credentialRevision)-\(refreshRevision)") {
+            guard dayOffset == 0, !followedSports.isEmpty else { return }
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(300)) } catch { break }
+                if Task.isCancelled { break }
+                await fixtures.refreshScores(sports: followedSports, date: Date())
+            }
+        }
+        .task(id: "schedule-\(followedSportsValue)-\(dayOffset)-\(credentialRevision)-\(refreshRevision)") {
+            guard dayOffset == 0, !followedSports.isEmpty else { return }
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(900)) } catch { break }
+                if Task.isCancelled { break }
+                await fixtures.fetch(sports: followedSports, date: Date(), quietly: true)
+            }
         }
         .task(id: credentialRevision) {
             await catalog.refresh()
@@ -334,7 +361,7 @@ struct SportFrameHome: View {
                                 .fixedSize(horizontal: false, vertical: true)
                                 .layoutPriority(1)
                             Spacer(minLength: 5)
-                            Text(event.intHomeScore ?? event.timeLabel)
+                            Text(fixtures.score(for: event).home ?? event.timeLabel)
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(Color(white: 0.66))
                         }
@@ -344,7 +371,7 @@ struct SportFrameHome: View {
                                 .fixedSize(horizontal: false, vertical: true)
                                 .layoutPriority(1)
                             Spacer(minLength: 5)
-                            if let awayScore = event.intAwayScore {
+                            if let awayScore = fixtures.score(for: event).away {
                                 Text(awayScore)
                                     .font(.system(size: 15, weight: .semibold))
                                     .foregroundStyle(Color(white: 0.66))
@@ -405,7 +432,7 @@ struct SportFrameHome: View {
                     HStack(spacing: 12) {
                         matchBadge(event.homeBadge)
                         Spacer(minLength: 0)
-                        Text(event.intHomeScore.map { "\($0) – \(event.intAwayScore ?? "–")" } ?? event.timeLabel)
+                        Text(fixtures.score(for: event).home.map { "\($0) – \(fixtures.score(for: event).away ?? "–")" } ?? event.timeLabel)
                             .font(.system(size: 27, weight: .bold)).lineLimit(1).minimumScaleFactor(0.7)
                         Spacer(minLength: 0)
                         matchBadge(event.awayBadge)
