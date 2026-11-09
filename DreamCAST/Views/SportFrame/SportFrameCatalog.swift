@@ -48,31 +48,38 @@ final class SportFrameCatalog: ObservableObject {
             .sorted { $0.strLeague.localizedStandardCompare($1.strLeague) == .orderedAscending }
     }
 
-    func badgeURL(for leagueName: String, sport: String) -> URL? {
-        guard let league = matchingLeague(leagueName, sport: sport) else { return nil }
-        return badgeURLs[league.idLeague] ?? URL(string: league.strBadge ?? league.strLogo ?? "")
+    func badgeURL(for leagueName: String, sport: String, idLeague: String? = nil) -> URL? {
+        if let idLeague, let cached = badgeURLs[idLeague] { return cached }
+        guard let league = matchingLeague(leagueName, sport: sport, idLeague: idLeague) else { return nil }
+        if let cached = badgeURLs[league.idLeague] { return cached }
+        return [league.strBadge, league.strLogo]
+            .compactMap { $0 }
+            .first { !$0.isEmpty }
+            .flatMap(URL.init(string:))
     }
 
-    func loadBadge(for leagueName: String, sport: String) async {
-        guard let league = matchingLeague(leagueName, sport: sport),
-              badgeURL(for: leagueName, sport: sport) == nil,
-              requestedBadges.insert(league.idLeague).inserted else { return }
-        guard let url = URL(string: "https://www.thesportsdb.com/api/v1/json/\(SportsDBAccess.apiKey)/lookupleague.php?id=\(league.idLeague)") else { return }
+    func loadBadge(for leagueName: String, sport: String, idLeague: String? = nil) async {
+        guard let resolvedID = idLeague ?? matchingLeague(leagueName, sport: sport)?.idLeague,
+              badgeURL(for: leagueName, sport: sport, idLeague: resolvedID) == nil,
+              requestedBadges.insert(resolvedID).inserted else { return }
+        guard let url = URL(string: "https://www.thesportsdb.com/api/v1/json/\(SportsDBAccess.apiKey)/lookupleague.php?id=\(resolvedID)") else { return }
         do {
             let (data, response) = try await URLSession.shared.data(from: url)
             guard (response as? HTTPURLResponse)?.statusCode == 200,
                   let payload = try JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let detail = (payload["leagues"] as? [[String: Any]])?.first,
-                  let badge = (detail["strBadge"] as? String) ?? (detail["strLogo"] as? String),
+                  let badge = [detail["strBadge"] as? String, detail["strLogo"] as? String]
+                    .compactMap({ $0 }).first(where: { !$0.isEmpty }),
                   let badgeURL = URL(string: badge), !Task.isCancelled else { return }
-            badgeURLs[league.idLeague] = badgeURL
+            badgeURLs[resolvedID] = badgeURL
         } catch {
             // Keep the sport icon when the league has no available artwork.
         }
     }
 
-    private func matchingLeague(_ name: String, sport: String) -> SportsCatalogLeague? {
-        leagues.first {
+    private func matchingLeague(_ name: String, sport: String, idLeague: String? = nil) -> SportsCatalogLeague? {
+        if let idLeague, let league = leagues.first(where: { $0.idLeague == idLeague }) { return league }
+        return leagues.first {
             $0.strSport.caseInsensitiveCompare(sport) == .orderedSame &&
             $0.strLeague.caseInsensitiveCompare(name) == .orderedSame
         }
