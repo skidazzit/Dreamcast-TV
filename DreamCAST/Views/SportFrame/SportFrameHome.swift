@@ -86,6 +86,54 @@ struct SportFrameHome: View {
         return Array(Set(names)).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
+    private var firstMatchFocusID: String? {
+        if let event = filteredMatches.first(where: { isLive($0) }) {
+            return "match-shelf-Happening now-\(event.idEvent)"
+        }
+        let upcoming = filteredMatches.filter { !isLive($0) && ($0.isUpcoming || $0.startDate == nil) }
+        if let event = upcoming.first {
+            return "match-shelf-Coming up-\(event.idEvent)"
+        }
+        if let event = followingDayMatches.first {
+            return "match-shelf-Coming up · Tomorrow-\(event.idEvent)"
+        }
+        if let event = filteredMatches.first(where: { $0.intHomeScore != nil || $0.intAwayScore != nil }),
+           !filteredMatches.contains(where: { isLive($0) || $0.isUpcoming || $0.startDate == nil }) {
+            return "match-shelf-Recent results-\(event.idEvent)"
+        }
+        if let sport = filteredSports.first(where: { candidate in
+            filteredMatches.contains { fixtures.eventSports[$0.idEvent] == candidate }
+        }), let event = filteredMatches.first(where: { fixtures.eventSports[$0.idEvent] == sport }) {
+            return "match-sport-\(sport)-\(event.idEvent)"
+        }
+        return nil
+    }
+
+    private var toolbarFocusIDs: [String] {
+        ["filter-sport", "filter-league"] + (-1...3).map { "filter-day-\($0)" }
+            + ["filter-refresh", "filter-settings"]
+    }
+
+    private func moveFocus(_ direction: MoveCommandDirection, within order: [String],
+                           up: String? = nil, down: String? = nil) {
+        guard let current = focusedCard, let index = order.firstIndex(of: current) else { return }
+        switch direction {
+        case .left where index > 0: focusedCard = order[index - 1]
+        case .right where index + 1 < order.count: focusedCard = order[index + 1]
+        case .up: if let up { focusedCard = up }
+        case .down: if let down { focusedCard = down }
+        default: break
+        }
+    }
+
+    private var firstContentFocusID: String? {
+        switch tab {
+        case 0: return "filter-sport"
+        case 1: return liveTV.channels.first.map { "channel-\($0.id)" }
+        default: return "settings-sports"
+        }
+    }
+
     private func toggleSport(_ name: String) {
         var selected = Set(followedSports)
         if selected.contains(name) { selected.remove(name) } else { selected.insert(name) }
@@ -132,6 +180,10 @@ struct SportFrameHome: View {
                             navigation("Settings", index: 2, symbol: "gearshape")
                         }
                         .focusSection()
+                        .onMoveCommand { direction in
+                            moveFocus(direction, within: ["nav-0", "nav-1", "nav-2"],
+                                      down: firstContentFocusID)
+                        }
                         .padding(6)
                         .background(.ultraThinMaterial, in: Capsule())
                         .overlay(Capsule().stroke(Color.white.opacity(0.17), lineWidth: 1))
@@ -197,6 +249,7 @@ struct SportFrameHome: View {
         }
         .buttonStyle(.bordered)
         .tint(tab == index ? Color.white.opacity(0.25) : Color.gray.opacity(0.12))
+        .focused($focusedCard, equals: "nav-\(index)")
     }
 
     private var matchesPage: some View {
@@ -209,6 +262,7 @@ struct SportFrameHome: View {
                     }
                 } label: { Label(matchSportFilter, systemImage: "sportscourt") }
                 .buttonStyle(.bordered)
+                .focused($focusedCard, equals: "filter-sport")
                 Menu {
                     Button(allLeagueFilter) { matchLeagueFilter = allLeagueFilter }
                     ForEach(filterLeagues, id: \.self) { league in
@@ -216,20 +270,28 @@ struct SportFrameHome: View {
                     }
                 } label: { Label(matchLeagueFilter, systemImage: "list.bullet") }
                 .buttonStyle(.bordered)
+                .focused($focusedCard, equals: "filter-league")
                 HStack(spacing: 8) {
                     ForEach(-1...3, id: \.self) { offset in
                         Button(offset == 0 ? "Today" : offset == -1 ? "Yesterday" : "+\(offset)d") { dayOffset = offset }
                             .buttonStyle(.bordered)
                             .tint(dayOffset == offset ? Color.white.opacity(0.25) : Color.gray.opacity(0.12))
+                            .focused($focusedCard, equals: "filter-day-\(offset)")
                     }
                 }
                 Spacer()
                 Button { refreshRevision += 1 } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.bordered)
+                    .focused($focusedCard, equals: "filter-refresh")
                 Button { tab = 2 } label: { Image(systemName: "slider.horizontal.3") }
                     .buttonStyle(.bordered)
+                    .focused($focusedCard, equals: "filter-settings")
             }
             .focusSection()
+            .onMoveCommand { direction in
+                moveFocus(direction, within: toolbarFocusIDs,
+                          up: "nav-\(tab)", down: firstMatchFocusID)
+            }
             if followedSports.isEmpty {
                 emptyPanel("Select sports in Setup to see matches.")
             } else if fixtures.loading {
@@ -271,6 +333,7 @@ struct SportFrameHome: View {
                 }
             }
         }
+        .focusSection()
     }
 
     private var leagueSummarySection: some View {
@@ -317,6 +380,7 @@ struct SportFrameHome: View {
                 }
             }
         }
+        .focusSection()
     }
 
     private func leagueRank(_ name: String, sport: String) -> Int {
@@ -667,6 +731,7 @@ struct SportFrameHome: View {
                 .sportFrameFocusOutline(focusedCard == "channel-\(channel.id)", radius: 16)
             }
         }
+        .focusSection()
     }
 
     private var setupPage: some View {
@@ -718,6 +783,7 @@ struct SportFrameHome: View {
             }
         }
         .sportFrameGlassPanel(radius: 20)
+        .focusSection()
     }
 
     private var premiumSettings: some View {
