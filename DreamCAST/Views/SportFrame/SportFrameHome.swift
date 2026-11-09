@@ -98,15 +98,30 @@ struct SportFrameHome: View {
         return Array(Set(names)).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
     }
 
+    private func sortedByStartTime(_ events: [SportEvent]) -> [SportEvent] {
+        events.sorted { lhs, rhs in
+            switch (lhs.startDate, rhs.startDate) {
+            case let (left?, right?):
+                return left == right ? lhs.name < rhs.name : left < right
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            case (nil, nil):
+                return lhs.name < rhs.name
+            }
+        }
+    }
+
     private var firstMatchFocusID: String? {
         if let event = filteredMatches.first(where: { isLive($0) }) {
             return "match-shelf-Happening now-\(event.idEvent)"
         }
-        let upcoming = filteredMatches.filter { !isLive($0) && ($0.isUpcoming || $0.startDate == nil) }
+        let upcoming = sortedByStartTime(filteredMatches.filter { !isLive($0) && ($0.isUpcoming || $0.startDate == nil) })
         if let event = upcoming.first {
             return "match-shelf-Coming up-\(event.idEvent)"
         }
-        if let event = followingDayMatches.first {
+        if let event = sortedByStartTime(followingDayMatches).first {
             return "match-shelf-Coming up · Tomorrow-\(event.idEvent)"
         }
         if let event = filteredMatches.first(where: { $0.intHomeScore != nil || $0.intAwayScore != nil }),
@@ -318,9 +333,9 @@ struct SportFrameHome: View {
                 emptyPanel("No matches for these filters and date. Try All Sports or All Leagues.")
             } else {
                 matchShelf("Happening now", events: filteredMatches.filter { isLive($0) })
-                let todayUpcoming = filteredMatches.filter { !isLive($0) && ($0.isUpcoming || $0.startDate == nil) }
+                let todayUpcoming = sortedByStartTime(filteredMatches.filter { !isLive($0) && ($0.isUpcoming || $0.startDate == nil) })
                 matchShelf(todayUpcoming.isEmpty && !followingDayMatches.isEmpty ? "Coming up · Tomorrow" : "Coming up",
-                           events: todayUpcoming.isEmpty ? followingDayMatches : todayUpcoming)
+                           events: todayUpcoming.isEmpty ? sortedByStartTime(followingDayMatches) : todayUpcoming)
                 if !filteredMatches.contains(where: { isLive($0) || $0.isUpcoming || $0.startDate == nil }) && followingDayMatches.isEmpty {
                     matchShelf("Recent results", events: filteredMatches.filter { $0.intHomeScore != nil || $0.intAwayScore != nil })
                 }
