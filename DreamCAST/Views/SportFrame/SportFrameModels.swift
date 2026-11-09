@@ -38,6 +38,7 @@ struct SportEvent: Decodable, Identifiable {
     }
 
     var isLive: Bool {
+        if let startDate, startDate > Date() { return false }
         let status = (strStatus ?? "").trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         // Use the provider's explicit match period. Do not guess from the score.
         let livePeriods: Set<String> = ["1H", "2H", "HT", "ET", "Q1", "Q2", "Q3", "Q4", "OT", "P1", "P2", "P3"]
