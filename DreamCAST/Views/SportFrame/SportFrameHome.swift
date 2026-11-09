@@ -117,7 +117,11 @@ struct SportFrameHome: View {
     private func moveFocusDown(_ direction: MoveCommandDirection, within order: [String], to target: String?) {
         guard direction == .down, let current = focusedCard,
               order.contains(current), let target else { return }
-        focusedCard = target
+        // Give tvOS its own focus move first. Only bridge an otherwise empty row.
+        DispatchQueue.main.async {
+            guard focusedCard == current else { return }
+            focusedCard = target
+        }
     }
 
     private var firstContentFocusID: String? {
