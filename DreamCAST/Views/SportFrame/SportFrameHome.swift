@@ -12,6 +12,7 @@ struct SportFrameHome: View {
     @AppStorage("sportFrameFollowedSportsV2") private var followedSportsValue = "Soccer|Basketball|American Football"
     @AppStorage("sportFrameSportOrderV2") private var sportOrderValue = "Soccer|Basketball|American Football|Tennis|Motorsport|Ice Hockey|Cricket"
     @AppStorage("sportFrameLeagueSelectionsV2") private var leagueSelectionsValue = "{}"
+    @AppStorage("sportFrameLiveTVSourceID") private var liveTVSourceID = "all"
     @State private var expandedSport: String?
     @State private var expandedSettingsSection: String?
     @State private var dayOffset = 0
@@ -30,6 +31,16 @@ struct SportFrameHome: View {
     private let accent = Color(red: 0.0, green: 0.8, blue: 0.94)
     private let allSports = "All Sports"
     private let allLeagueFilter = "All Leagues"
+
+    private var selectedLiveTVSourceID: String? {
+        liveTVSourceID != "all" && liveTV.sources.contains(where: { $0.id == liveTVSourceID })
+            ? liveTVSourceID : nil
+    }
+
+    private var sportFrameChannels: [UnifiedChannel] {
+        guard let sourceID = selectedLiveTVSourceID else { return liveTV.channels }
+        return liveTV.channels.filter { $0.sourceId == sourceID }
+    }
 
     private var sportOrder: [String] {
         let saved = sportOrderValue.split(separator: "|").map(String.init)
@@ -128,7 +139,7 @@ struct SportFrameHome: View {
     private var firstContentFocusID: String? {
         switch tab {
         case 0: return "filter-sport"
-        case 1: return liveTV.channels.first.map { "channel-\($0.id)" }
+        case 1: return sportFrameChannels.first.map { "channel-\($0.id)" }
         default: return "settings-sports"
         }
     }
@@ -705,10 +716,10 @@ struct SportFrameHome: View {
     private var channelsPage: some View {
         VStack(alignment: .leading, spacing: 22) {
             Text("My channels").font(.largeTitle.bold())
-            Text("\(liveTV.channels.count) streams loaded from your playlist")
+            Text("\(sportFrameChannels.count) channels from the selected playlist")
                 .foregroundStyle(.secondary)
-            if liveTV.channels.isEmpty { emptyPanel("Add a playlist in DreamCAST Live TV.") }
-            channelGrid(liveTV.channels)
+            if sportFrameChannels.isEmpty { emptyPanel("No channels in this playlist. Select another source in SportFrame Settings.") }
+            channelGrid(sportFrameChannels)
         }
     }
 
@@ -862,20 +873,62 @@ struct SportFrameHome: View {
     }
 
     private var liveTVSettings: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("SportFrame uses your existing DreamCAST Live TV playlists.")
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Choose which DreamCAST Live TV playlist SportFrame can use.")
                 .foregroundStyle(.secondary)
-            Text("\(liveTV.channels.count) available channels")
+            Text("\(sportFrameChannels.count.formatted()) channels available")
                 .font(.title2.bold()).foregroundStyle(accent)
-            Text("Add or refresh M3U and Xtream sources in DreamCAST Live TV settings.")
+
+            Button {
+                liveTVSourceID = "all"
+            } label: {
+                HStack(spacing: 14) {
+                    Image(systemName: selectedLiveTVSourceID == nil ? "largecircle.fill.circle" : "circle")
+                        .foregroundStyle(accent)
+                    Text("All Playlists").font(.headline)
+                    Spacer()
+                    Text(liveTV.channels.count.formatted()).foregroundStyle(.secondary)
+                }
+                .padding(16)
+                .sportFrameGlassPanel(radius: 14)
+            }
+            .buttonStyle(SportFrameArtworkButtonStyle())
+            .focused($focusedCard, equals: "source-all")
+            .sportFrameFocusOutline(focusedCard == "source-all", radius: 14)
+
+            ForEach(liveTV.sources) { source in
+                Button {
+                    liveTVSourceID = source.id
+                } label: {
+                    HStack(spacing: 14) {
+                        Image(systemName: selectedLiveTVSourceID == source.id ? "largecircle.fill.circle" : "circle")
+                            .foregroundStyle(accent)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(source.displayName).font(.headline)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text(source.isConnected ? "Connected" : "Not connected")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Text(source.channelCount.formatted()).foregroundStyle(.secondary)
+                    }
+                    .padding(16)
+                    .sportFrameGlassPanel(radius: 14)
+                }
+                .buttonStyle(SportFrameArtworkButtonStyle())
+                .focused($focusedCard, equals: "source-\(source.id)")
+                .sportFrameFocusOutline(focusedCard == "source-\(source.id)", radius: 14)
+            }
+
+            Text("Manage or refresh your sources in DreamCAST Live TV settings.")
                 .font(.footnote).foregroundStyle(.secondary)
-            Text("Channels play in a separate SportFrame viewer. Back returns to SportFrame.")
+            Text("Your choice only filters SportFrame. Live TV playlists stay unchanged.")
                 .font(.footnote).foregroundStyle(.secondary)
         }
     }
 
     private func eventChannels(_ event: SportEvent) -> some View {
-        let matches = ChannelMatcher.matching(event, in: liveTV.channels)
+        let matches = ChannelMatcher.matching(event, in: sportFrameChannels)
         return ZStack {
             SportFrameCinematicBackdrop().ignoresSafeArea()
             VStack {
