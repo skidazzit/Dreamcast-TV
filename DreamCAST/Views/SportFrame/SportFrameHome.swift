@@ -21,6 +21,7 @@ struct SportFrameHome: View {
     @State private var matchLeagueFilter = "All Leagues"
     @State private var selectedEvent: SportEvent?
     @State private var pendingPlayerChannel: UnifiedChannel?
+    @State private var channelMatchCounts: [String: Int] = [:]
     @FocusState private var focusedCard: String?
     @State private var premiumKeyInput = ""
     @State private var premiumKeySaved = SportsDBAccess.hasPremiumKey
@@ -258,6 +259,29 @@ struct SportFrameHome: View {
         }
         .task(id: credentialRevision) {
             await catalog.refresh()
+        }
+        .task(id: "match-counts-\(liveTVSourceID)-\(liveTV.channels.count)-\(fixtures.events.map(\.idEvent).joined(separator: "|"))-\(fixtures.nextDayEvents.map(\.idEvent).joined(separator: "|"))") {
+            // Build counts off the UI thread. Focus changes only read this small dictionary.
+            let names = sportFrameChannels.map(\.name)
+            let candidates = fixtures.events + fixtures.nextDayEvents
+            let terms = candidates.compactMap { event -> (String, String, String)? in
+                guard let home = event.strHomeTeam, let away = event.strAwayTeam else { return nil }
+                return (event.idEvent, home, away)
+            }
+            let counts = await Task.detached(priority: .utility) {
+                let normalized = names.map(ChannelMatcher.normalize)
+                var result: [String: Int] = [:]
+                for (eventID, home, away) in terms {
+                    let first = ChannelMatcher.normalize(home)
+                    let second = ChannelMatcher.normalize(away)
+                    guard first.count >= 4 && second.count >= 4 else { continue }
+                    result[eventID] = normalized.reduce(0) { count, name in
+                        count + (name.contains(first) && name.contains(second) ? 1 : 0)
+                    }
+                }
+                return result
+            }.value
+            if !Task.isCancelled { channelMatchCounts = counts }
         }
         .sheet(item: $selectedEvent, onDismiss: {
             if let channel = pendingPlayerChannel {
@@ -573,7 +597,7 @@ struct SportFrameHome: View {
             Text(event.name)
                 .font(.system(size: 18, weight: .semibold))
                 .fixedSize(horizontal: false, vertical: true)
-            let count = ChannelMatcher.matching(event, in: liveTV.channels).count
+            let count = channelMatchCounts[event.idEvent] ?? 0
             Text(count == 0 ? "Find channels" : "\(count) matching channels")
                 .font(.system(size: 15)).foregroundStyle(Color(white: 0.48))
         }
