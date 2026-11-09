@@ -1069,8 +1069,9 @@ private struct DreamCASTStartupSplash: View {
             VStack(spacing: 26) {
                 Image("DreamCASTStartupLogo")
                     .resizable()
-                    .scaledToFit()
+                    .scaledToFill()
                     .frame(width: 620, height: 372)
+                    .clipped()
                     .blendMode(.screen)
                     .scaleEffect(isAnimating ? 1.025 : 0.98)
                     .shadow(color: turquoise.opacity(0.18), radius: 48)
