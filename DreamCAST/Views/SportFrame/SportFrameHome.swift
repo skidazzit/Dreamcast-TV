@@ -881,19 +881,19 @@ struct SportFrameHome: View {
             VStack {
                 Spacer(minLength: 30)
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 25) {
+                    VStack(alignment: .leading, spacing: 16) {
                         HStack {
-                            VStack(alignment: .leading, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 5) {
                                 Text("WATCH MATCH").font(.subheadline.bold()).foregroundStyle(accent)
-                                Text(event.name).font(.largeTitle.bold())
+                                Text(event.name).font(.title.bold()).fixedSize(horizontal: false, vertical: true)
                             }
                             Spacer()
                             Button("Close") { selectedEvent = nil }
                                 .focused($focusedCard, equals: "event-close")
                                 .sportFrameFocusOutline(focusedCard == "event-close")
                         }
-                        Text("Choose a channel to watch full screen. Press Back to return to SportFrame.")
-                            .foregroundStyle(.secondary)
+                        Text("Select a channel to watch. Back returns to SportFrame.")
+                            .font(.subheadline).foregroundStyle(.secondary)
                         if matches.isEmpty {
                             emptyPanel("No matching channels found. Check your Live TV playlist or browse all channels.")
                             Button("View all channels") { selectedEvent = nil; tab = 1 }
@@ -903,10 +903,10 @@ struct SportFrameHome: View {
                             matchChannelList(matches)
                         }
                     }
-                    .padding(34)
+                    .padding(24)
                 }
-                .frame(maxWidth: 1050, maxHeight: 650)
-                .sportFrameGlassPanel(radius: 28)
+                .frame(maxWidth: 800, maxHeight: 520)
+                .sportFrameGlassPanel(radius: 24)
                 Spacer(minLength: 30)
             }
             .padding(.horizontal, 30)
@@ -929,16 +929,16 @@ private struct SportFrameMatchChannelRow: View {
 
     var body: some View {
         Button(action: onSelect) {
-            HStack(spacing: 20) {
+            HStack(spacing: 14) {
                 AsyncImage(url: channel.logoURL) { image in
                     image.resizable().scaledToFit()
                 } placeholder: {
                     Image(systemName: "tv").foregroundStyle(.secondary)
                 }
-                .frame(width: 76, height: 58)
-                VStack(alignment: .leading, spacing: 6) {
+                .frame(width: 58, height: 44)
+                VStack(alignment: .leading, spacing: 4) {
                     Text(channel.name)
-                        .font(.title3.weight(.semibold))
+                        .font(.headline.weight(.semibold))
                         .fixedSize(horizontal: false, vertical: true)
                         .multilineTextAlignment(.leading)
                     Text(channel.groupTitle ?? "Live TV")
@@ -950,8 +950,8 @@ private struct SportFrameMatchChannelRow: View {
                 Image(systemName: "play.fill")
                     .foregroundStyle(accent)
             }
-            .padding(.horizontal, 22)
-            .padding(.vertical, 16)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .sportFrameGlassPanel(radius: 16)
         }
