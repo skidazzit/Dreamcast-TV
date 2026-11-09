@@ -35,23 +35,39 @@ final class FixtureStore: ObservableObject {
         let day = DateFormatter()
         day.dateFormat = "yyyy-MM-dd"
         day.timeZone = .current
+        let calendar = Calendar.current
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: date) ?? date.addingTimeInterval(86_400)
         var results: [SportEvent] = []
         var sportMap: [String: String] = [:]
+        var upcoming: [SportEvent] = []
+        var upcomingSports: [String: String] = [:]
         var failures = 0
         for sport in sports {
             if Task.isCancelled { return }
-            var parts = URLComponents(string: "https://www.thesportsdb.com/api/v1/json/\(SportsDBAccess.apiKey)/eventsday.php")!
-            parts.queryItems = [URLQueryItem(name: "d", value: day.string(from: date)),
-                                URLQueryItem(name: "s", value: sport)]
-            guard let url = parts.url else { failures += 1; continue }
-            do {
-                let (data, response) = try await URLSession.shared.data(from: url)
-                guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
-                let dayEvents = try JSONDecoder().decode(DayResponse.self, from: data).events ?? []
-                for event in dayEvents { sportMap[event.idEvent] = sport }
-                results.append(contentsOf: dayEvents)
-            } catch {
-                failures += 1
+            // UTC kickoff times can land on the following calendar day.
+            // Fetch both API dates and sort them into the viewer's local day.
+            for requestDate in [date, tomorrow] {
+                if Task.isCancelled { return }
+                var parts = URLComponents(string: "https://www.thesportsdb.com/api/v1/json/\(SportsDBAccess.apiKey)/eventsday.php")!
+                parts.queryItems = [URLQueryItem(name: "d", value: day.string(from: requestDate)),
+                                    URLQueryItem(name: "s", value: sport)]
+                guard let url = parts.url else { failures += 1; continue }
+                do {
+                    let (data, response) = try await URLSession.shared.data(from: url)
+                    guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+                    let dayEvents = try JSONDecoder().decode(DayResponse.self, from: data).events ?? []
+                    for event in dayEvents {
+                        if isOnLocalDay(event, date: date, calendar: calendar) {
+                            sportMap[event.idEvent] = sport
+                            results.append(event)
+                        } else if calendar.isDateInToday(date) && isOnLocalDay(event, date: tomorrow, calendar: calendar) {
+                            upcomingSports[event.idEvent] = sport
+                            upcoming.append(event)
+                        }
+                    }
+                } catch {
+                    failures += 1
+                }
             }
         }
         if Task.isCancelled { return }
@@ -59,39 +75,20 @@ final class FixtureStore: ObservableObject {
         var ids = Set<String>()
         events = results.filter { ids.insert($0.idEvent).inserted }
         eventSports = sportMap
-        if failures > 0 { error = failures == sports.count ? "Could not load sports schedules." : nil }
-        // When today's slate has no future fixtures, get tomorrow's schedule
-        // for the Coming up shelf without changing today's league summaries.
-        guard Calendar.current.isDateInToday(date),
-              !events.contains(where: { $0.isUpcoming }),
-              let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: date) else {
-            nextDayEvents = []
-            nextDaySports = [:]
-            return
-        }
-        var upcoming: [SportEvent] = []
-        var upcomingSports: [String: String] = [:]
-        for sport in sports {
-            if Task.isCancelled { return }
-            var parts = URLComponents(string: "https://www.thesportsdb.com/api/v1/json/\(SportsDBAccess.apiKey)/eventsday.php")!
-            parts.queryItems = [URLQueryItem(name: "d", value: day.string(from: tomorrow)),
-                                URLQueryItem(name: "s", value: sport)]
-            guard let url = parts.url else { continue }
-            do {
-                let (data, response) = try await URLSession.shared.data(from: url)
-                guard (response as? HTTPURLResponse)?.statusCode == 200 else { continue }
-                let dayEvents = try JSONDecoder().decode(DayResponse.self, from: data).events ?? []
-                for event in dayEvents {
-                    upcomingSports[event.idEvent] = sport
-                    upcoming.append(event)
-                }
-            } catch {
-                continue
-            }
-        }
-        if Task.isCancelled { return }
+        if failures > 0 { error = failures == sports.count * 2 ? "Could not load sports schedules." : nil }
         var upcomingIDs = Set<String>()
-        nextDayEvents = upcoming.filter { upcomingIDs.insert($0.idEvent).inserted }
-        nextDaySports = upcomingSports
+        nextDayEvents = calendar.isDateInToday(date) ? upcoming.filter { upcomingIDs.insert($0.idEvent).inserted } : []
+        nextDaySports = calendar.isDateInToday(date) ? upcomingSports : [:]
+    }
+
+    private func isOnLocalDay(_ event: SportEvent, date: Date, calendar: Calendar) -> Bool {
+        if let kickoff = event.startDate { return calendar.isDate(kickoff, inSameDayAs: date) }
+        // Older fixtures have no timestamp. Use their supplied date as a fallback.
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = calendar.timeZone
+        guard let rawDate = event.dateEvent, let fallback = formatter.date(from: rawDate) else { return false }
+        return calendar.isDate(fallback, inSameDayAs: date)
     }
 }
