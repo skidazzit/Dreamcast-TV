@@ -520,7 +520,11 @@ struct SportFrameHome: View {
                 .foregroundStyle(.secondary)
             HStack(spacing: 16) {
                 Button("Select all") { followedSportsValue = sportOrder.joined(separator: "|") }
+                    .focused($focusedCard, equals: "sports-all")
+                    .sportFrameFocusOutline(focusedCard == "sports-all")
                 Button("Unselect all") { followedSportsValue = "" }
+                    .focused($focusedCard, equals: "sports-none")
+                    .sportFrameFocusOutline(focusedCard == "sports-none")
             }
             .buttonStyle(SportFrameGlassControlStyle())
             if let message = catalog.message {
@@ -535,20 +539,30 @@ struct SportFrameHome: View {
                             Text(sport).foregroundStyle(followedSports.contains(sport) ? .white : .gray)
                             Spacer()
                         }
-                        .buttonStyle(.plain)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .buttonStyle(SportFrameArtworkButtonStyle())
+                        .focused($focusedCard, equals: "sport-toggle-\(sport)")
+                        .sportFrameFocusOutline(focusedCard == "sport-toggle-\(sport)")
                         Button { expandedSport = expandedSport == sport ? nil : sport } label: {
                             Image(systemName: expandedSport == sport ? "chevron.down" : "chevron.right")
                         }
                         .buttonStyle(SportFrameGlassControlStyle())
+                        .focused($focusedCard, equals: "sport-expand-\(sport)")
+                        .sportFrameFocusOutline(focusedCard == "sport-expand-\(sport)")
                         Button { moveSport(sport, by: -1) } label: {
                             Image(systemName: "arrow.up")
                         }
                         .buttonStyle(SportFrameGlassControlStyle())
+                        .focused($focusedCard, equals: "sport-up-\(sport)")
+                        .sportFrameFocusOutline(focusedCard == "sport-up-\(sport)")
                         .disabled(sportOrder.first == sport)
                         Button { moveSport(sport, by: 1) } label: {
                             Image(systemName: "arrow.down")
                         }
                         .buttonStyle(SportFrameGlassControlStyle())
+                        .focused($focusedCard, equals: "sport-down-\(sport)")
+                        .sportFrameFocusOutline(focusedCard == "sport-down-\(sport)")
                         .disabled(sportOrder.last == sport)
                     }
                     .padding(.vertical, 15)
@@ -563,11 +577,15 @@ struct SportFrameHome: View {
                                     choices.removeValue(forKey: sport)
                                     saveLeagueSelections(choices)
                                 }
+                                .focused($focusedCard, equals: "league-all-\(sport)")
+                                .sportFrameFocusOutline(focusedCard == "league-all-\(sport)")
                                 Button("Unselect all") {
                                     var choices = leagueSelections
                                     choices[sport] = []
                                     saveLeagueSelections(choices)
                                 }
+                                .focused($focusedCard, equals: "league-none-\(sport)")
+                                .sportFrameFocusOutline(focusedCard == "league-none-\(sport)")
                             }
                             .buttonStyle(SportFrameGlassControlStyle())
                             if leagueNames.isEmpty {
@@ -581,8 +599,12 @@ struct SportFrameHome: View {
                                         Text(league)
                                         Spacer()
                                     }
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 8)
                                 }
-                                .buttonStyle(.plain)
+                                .buttonStyle(SportFrameArtworkButtonStyle())
+                                .focused($focusedCard, equals: "league-toggle-\(sport)-\(league)")
+                                .sportFrameFocusOutline(focusedCard == "league-toggle-\(sport)-\(league)")
                             }
                         }
                         .padding(.leading, 55)
@@ -638,7 +660,9 @@ struct SportFrameHome: View {
                     .padding(20)
                     .sportFrameGlassPanel(radius: 16)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(SportFrameArtworkButtonStyle())
+                .focused($focusedCard, equals: "channel-\(channel.id)")
+                .sportFrameFocusOutline(focusedCard == "channel-\(channel.id)", radius: 16)
             }
         }
     }
@@ -682,7 +706,9 @@ struct SportFrameHome: View {
                 .padding(24)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SportFrameArtworkButtonStyle())
+            .focused($focusedCard, equals: "settings-\(key)")
+            .sportFrameFocusOutline(focusedCard == "settings-\(key)", radius: 18)
             if expandedSettingsSection == key {
                 Divider().padding(.horizontal, 24)
                 content()
@@ -710,6 +736,8 @@ struct SportFrameHome: View {
                     }
                 }
                 .buttonStyle(SportFrameGlassControlStyle(selected: true))
+                .focused($focusedCard, equals: "premium-save")
+                .sportFrameFocusOutline(focusedCard == "premium-save")
                 Button("Use Free Access") {
                     SportsDBAccess.remove()
                     premiumKeyInput = ""
@@ -718,6 +746,8 @@ struct SportFrameHome: View {
                     credentialMessage = "Premium key removed. Free access is active."
                 }
                 .buttonStyle(SportFrameGlassControlStyle())
+                .focused($focusedCard, equals: "premium-free")
+                .sportFrameFocusOutline(focusedCard == "premium-free")
                 .disabled(!premiumKeySaved)
             }
             if let credentialMessage {
@@ -751,12 +781,16 @@ struct SportFrameHome: View {
                         Text(event.name).font(.largeTitle.bold())
                         Spacer()
                         Button("Close") { selectedEvent = nil }
+                            .focused($focusedCard, equals: "event-close")
+                            .sportFrameFocusOutline(focusedCard == "event-close")
                     }
                     Text("Channels found by matching both team names. The stream is not verified by the EPG.")
                         .foregroundStyle(.secondary)
                     if matches.isEmpty {
                         emptyPanel("No channel names match this fixture. Check Live TV channels or browse them manually.")
                         Button("View all channels") { selectedEvent = nil; tab = 1 }
+                            .focused($focusedCard, equals: "event-all-channels")
+                            .sportFrameFocusOutline(focusedCard == "event-all-channels")
                     } else {
                         channelGrid(matches)
                     }
@@ -840,6 +874,16 @@ private struct SportFrameGlassPanelModifier: ViewModifier {
 private extension View {
     func sportFrameGlassPanel(radius: CGFloat) -> some View {
         modifier(SportFrameGlassPanelModifier(radius: radius))
+    }
+
+    func sportFrameFocusOutline(_ focused: Bool, radius: CGFloat = 10) -> some View {
+        self
+            .focusEffectDisabled()
+            .overlay {
+                RoundedRectangle(cornerRadius: radius, style: .continuous)
+                    .stroke(focused ? Color.white.opacity(0.85) : Color.clear, lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
     }
 }
 
