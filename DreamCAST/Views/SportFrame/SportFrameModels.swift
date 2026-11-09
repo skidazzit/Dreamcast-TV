@@ -6,6 +6,8 @@ struct SportEvent: Decodable, Identifiable {
     let strHomeTeam: String?
     let strAwayTeam: String?
     let strLeague: String?
+    let idLeague: String?
+    let strLeagueBadge: String?
     let strSport: String?
     let strHomeTeamBadge: String?
     let strAwayTeamBadge: String?
@@ -20,6 +22,7 @@ struct SportEvent: Decodable, Identifiable {
     var id: String { idEvent }
     var name: String { strEvent ?? "Upcoming event" }
     var league: String { strLeague ?? "Other league" }
+    var leagueBadge: URL? { strLeagueBadge.flatMap(URL.init(string:)) }
     var homeBadge: URL? { strHomeTeamBadge.flatMap(URL.init(string:)) }
     var awayBadge: URL? { strAwayTeamBadge.flatMap(URL.init(string:)) }
     var kickoff: String { [dateEvent, strTime].compactMap { $0 }.joined(separator: "  ") }
