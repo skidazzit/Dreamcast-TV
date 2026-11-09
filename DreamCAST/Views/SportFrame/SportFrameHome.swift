@@ -20,7 +20,6 @@ struct SportFrameHome: View {
     @State private var matchLeagueFilter = "All Leagues"
     @State private var selectedEvent: SportEvent?
     @State private var pendingPlayerChannel: UnifiedChannel?
-    @State private var playingChannel: UnifiedChannel?
     @FocusState private var focusedCard: String?
     @State private var premiumKeyInput = ""
     @State private var premiumKeySaved = SportsDBAccess.hasPremiumKey
@@ -237,16 +236,12 @@ struct SportFrameHome: View {
         .sheet(item: $selectedEvent, onDismiss: {
             if let channel = pendingPlayerChannel {
                 pendingPlayerChannel = nil
-                playingChannel = channel
+                DispatchQueue.main.async {
+                    presentSportFrameChannel(channel)
+                }
             }
         }) { event in
             eventChannels(event)
-        }
-        .background {
-            SportFramePlayerPresenter(channel: playingChannel) {
-                playingChannel = nil
-            }
-            .frame(width: 0, height: 0)
         }
     }
 
@@ -722,8 +717,18 @@ struct SportFrameHome: View {
             pendingPlayerChannel = channel
             selectedEvent = nil
         } else {
-            playingChannel = channel
+            presentSportFrameChannel(channel)
         }
+    }
+
+    private func presentSportFrameChannel(_ channel: UnifiedChannel) {
+        // Match the working Live TV path: present from the active controller,
+        // never from an off-screen SwiftUI representable host.
+        guard let top = LiveProgramMenu.topViewController() else { return }
+        let player = LiveTVAetherPlayerViewController(channel: channel)
+        player.modalPresentationStyle = .fullScreen
+        // No onMinimize: Back closes the stream and exposes SportFrame again.
+        top.present(player, animated: true)
     }
 
     private func channelGrid(_ channels: [UnifiedChannel], columns: Int = 4) -> some View {
@@ -913,91 +918,6 @@ struct SportFrameHome: View {
             .frame(maxWidth: .infinity, minHeight: 130, alignment: .leading)
             .padding(25)
             .sportFrameGlassPanel(radius: 16)
-    }
-}
-
-// Uses the existing stream engine without handing the viewer to the Live TV guide.
-// The player owns its modal, so Back dismisses straight to the SportsFrame page.
-private struct SportFrameMatchChannelRow: View {
-    let channel: UnifiedChannel
-    let accent: Color
-    let onSelect: () -> Void
-    @FocusState private var isFocused: Bool
-
-    var body: some View {
-        Button(action: onSelect) {
-            HStack(spacing: 20) {
-                AsyncImage(url: channel.logoURL) { image in
-                    image.resizable().scaledToFit()
-                } placeholder: {
-                    Image(systemName: "tv").foregroundStyle(.secondary)
-                }
-                .frame(width: 76, height: 58)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(channel.name)
-                        .font(.title3.weight(.semibold))
-                        .fixedSize(horizontal: false, vertical: true)
-                        .multilineTextAlignment(.leading)
-                    Text(channel.groupTitle ?? "Live TV")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 12)
-                Image(systemName: "play.fill")
-                    .foregroundStyle(accent)
-            }
-            .padding(.horizontal, 22)
-            .padding(.vertical, 16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .sportFrameGlassPanel(radius: 16)
-        }
-        .buttonStyle(SportFrameArtworkButtonStyle())
-        .focused($isFocused)
-        .background(isFocused ? Color.white.opacity(0.08) : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 16))
-        .sportFrameFocusOutline(isFocused, radius: 16)
-    }
-}
-
-private struct SportFramePlayerPresenter: UIViewControllerRepresentable {
-    let channel: UnifiedChannel?
-    let onClose: () -> Void
-
-    final class Coordinator {
-        var openingChannelID: String?
-        var onClose: () -> Void
-
-        init(onClose: @escaping () -> Void) { self.onClose = onClose }
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator(onClose: onClose) }
-
-    func makeUIViewController(context: Context) -> UIViewController {
-        let host = UIViewController()
-        host.view.backgroundColor = .clear
-        return host
-    }
-
-    func updateUIViewController(_ host: UIViewController, context: Context) {
-        let coordinator = context.coordinator
-        coordinator.onClose = onClose
-        guard let channel, coordinator.openingChannelID != channel.id else { return }
-        coordinator.openingChannelID = channel.id
-        DispatchQueue.main.async {
-            guard host.view.window != nil, host.presentedViewController == nil else {
-                coordinator.openingChannelID = nil
-                return
-            }
-            let player = LiveTVAetherPlayerViewController(channel: channel)
-            player.modalPresentationStyle = .fullScreen
-            // No onMinimize: Back stops the stream instead of sending it to the guide.
-            player.onDismiss = { [weak coordinator] _ in
-                coordinator?.openingChannelID = nil
-                coordinator?.onClose()
-            }
-            host.present(player, animated: true)
-        }
     }
 }
 
