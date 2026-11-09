@@ -114,16 +114,10 @@ struct SportFrameHome: View {
             + ["filter-refresh", "filter-settings"]
     }
 
-    private func moveFocus(_ direction: MoveCommandDirection, within order: [String],
-                           up: String? = nil, down: String? = nil) {
-        guard let current = focusedCard, let index = order.firstIndex(of: current) else { return }
-        switch direction {
-        case .left where index > 0: focusedCard = order[index - 1]
-        case .right where index + 1 < order.count: focusedCard = order[index + 1]
-        case .up: if let up { focusedCard = up }
-        case .down: if let down { focusedCard = down }
-        default: break
-        }
+    private func moveFocusDown(_ direction: MoveCommandDirection, within order: [String], to target: String?) {
+        guard direction == .down, let current = focusedCard,
+              order.contains(current), let target else { return }
+        focusedCard = target
     }
 
     private var firstContentFocusID: String? {
@@ -181,8 +175,8 @@ struct SportFrameHome: View {
                         }
                         .focusSection()
                         .onMoveCommand { direction in
-                            moveFocus(direction, within: ["nav-0", "nav-1", "nav-2"],
-                                      down: firstContentFocusID)
+                            moveFocusDown(direction, within: ["nav-0", "nav-1", "nav-2"],
+                                          to: firstContentFocusID)
                         }
                         .padding(6)
                         .background(.ultraThinMaterial, in: Capsule())
@@ -248,7 +242,7 @@ struct SportFrameHome: View {
             .font(.system(size: 23, weight: tab == index ? .bold : .medium))
         }
         .buttonStyle(.bordered)
-        .tint(tab == index ? Color.white.opacity(0.25) : Color.gray.opacity(0.12))
+        .tint(Color.white.opacity(0.8))
         .focused($focusedCard, equals: "nav-\(index)")
     }
 
@@ -275,7 +269,7 @@ struct SportFrameHome: View {
                     ForEach(-1...3, id: \.self) { offset in
                         Button(offset == 0 ? "Today" : offset == -1 ? "Yesterday" : "+\(offset)d") { dayOffset = offset }
                             .buttonStyle(.bordered)
-                            .tint(dayOffset == offset ? Color.white.opacity(0.25) : Color.gray.opacity(0.12))
+                            .tint(Color.white.opacity(dayOffset == offset ? 0.8 : 0.52))
                             .focused($focusedCard, equals: "filter-day-\(offset)")
                     }
                 }
@@ -289,8 +283,7 @@ struct SportFrameHome: View {
             }
             .focusSection()
             .onMoveCommand { direction in
-                moveFocus(direction, within: toolbarFocusIDs,
-                          up: "nav-\(tab)", down: firstMatchFocusID)
+                moveFocusDown(direction, within: toolbarFocusIDs, to: firstMatchFocusID)
             }
             if followedSports.isEmpty {
                 emptyPanel("Select sports in Setup to see matches.")
