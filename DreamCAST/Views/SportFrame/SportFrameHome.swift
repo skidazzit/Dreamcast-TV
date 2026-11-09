@@ -756,36 +756,9 @@ struct SportFrameHome: View {
     private func matchChannelList(_ channels: [UnifiedChannel]) -> some View {
         LazyVStack(spacing: 12) {
             ForEach(channels) { channel in
-                Button { playSportFrameChannel(channel) } label: {
-                    HStack(spacing: 20) {
-                        AsyncImage(url: channel.logoURL) { image in
-                            image.resizable().scaledToFit()
-                        } placeholder: {
-                            Image(systemName: "tv").foregroundStyle(.secondary)
-                        }
-                        .frame(width: 76, height: 58)
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(channel.name)
-                                .font(.title3.weight(.semibold))
-                                .fixedSize(horizontal: false, vertical: true)
-                                .multilineTextAlignment(.leading)
-                            Text(channel.groupTitle ?? "Live TV")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer(minLength: 12)
-                        Image(systemName: "play.fill")
-                            .foregroundStyle(accent)
-                    }
-                    .padding(.horizontal, 22)
-                    .padding(.vertical, 16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .sportFrameGlassPanel(radius: 16)
+                SportFrameMatchChannelRow(channel: channel, accent: accent) {
+                    playSportFrameChannel(channel)
                 }
-                .buttonStyle(SportFrameArtworkButtonStyle())
-                .focused($focusedCard, equals: "event-channel-\(channel.id)")
-                .sportFrameFocusOutline(focusedCard == "event-channel-\(channel.id)", radius: 16)
             }
         }
         .focusSection()
@@ -945,6 +918,48 @@ struct SportFrameHome: View {
 
 // Uses the existing stream engine without handing the viewer to the Live TV guide.
 // The player owns its modal, so Back dismisses straight to the SportsFrame page.
+private struct SportFrameMatchChannelRow: View {
+    let channel: UnifiedChannel
+    let accent: Color
+    let onSelect: () -> Void
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 20) {
+                AsyncImage(url: channel.logoURL) { image in
+                    image.resizable().scaledToFit()
+                } placeholder: {
+                    Image(systemName: "tv").foregroundStyle(.secondary)
+                }
+                .frame(width: 76, height: 58)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(channel.name)
+                        .font(.title3.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                    Text(channel.groupTitle ?? "Live TV")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 12)
+                Image(systemName: "play.fill")
+                    .foregroundStyle(accent)
+            }
+            .padding(.horizontal, 22)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .sportFrameGlassPanel(radius: 16)
+        }
+        .buttonStyle(SportFrameArtworkButtonStyle())
+        .focused($isFocused)
+        .background(isFocused ? Color.white.opacity(0.08) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 16))
+        .sportFrameFocusOutline(isFocused, radius: 16)
+    }
+}
+
 private struct SportFramePlayerPresenter: UIViewControllerRepresentable {
     let channel: UnifiedChannel?
     let onClose: () -> Void
