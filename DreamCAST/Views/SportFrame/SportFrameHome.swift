@@ -493,10 +493,6 @@ struct SportFrameHome: View {
                             .buttonStyle(.bordered)
                             .focused(detailFocus, equals: "sport-detail-back")
                             .prefersDefaultFocus(in: focusScope)
-                            .overlay {
-                                Capsule().stroke(detailFocus.wrappedValue == "sport-detail-back" ? .white : .clear, lineWidth: 2)
-                                    .allowsHitTesting(false)
-                            }
                     }
 
                     HStack(spacing: 16) {
@@ -518,11 +514,6 @@ struct SportFrameHome: View {
                             if direction == .up && detailFocus.wrappedValue == "sport-detail-league-filter" {
                                 detailFocus.wrappedValue = "sport-detail-back"
                             }
-                        }
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 14)
-                                .stroke(detailFocus.wrappedValue == "sport-detail-league-filter" ? .white : .clear, lineWidth: 2)
-                                .allowsHitTesting(false)
                         }
                         Spacer()
                     }
@@ -592,12 +583,7 @@ struct SportFrameHome: View {
                                                 moveToDetailFixtureEntry(focus: detailFocus, scroll: detailScroll)
                                             }
                                         }
-                                        .focusEffectDisabled()
-                                        .overlay {
-                                            RoundedRectangle(cornerRadius: 14)
-                                                .stroke(detailFocus.wrappedValue == "highlight-\(video.id)" ? .white : .clear, lineWidth: 2)
-                                                .allowsHitTesting(false)
-                                        }
+                                        .sportFrameFocusOutline(detailFocus.wrappedValue == "highlight-\(video.id)", radius: 14)
                                     }
                                 }
                                 .padding(.vertical, 12)
@@ -623,12 +609,7 @@ struct SportFrameHome: View {
                     }
                     .buttonStyle(SportFrameArtworkButtonStyle())
                     .focused(detailFocus, equals: "sport-detail-fixtures-entry")
-                    .focusEffectDisabled()
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(detailFocus.wrappedValue == "sport-detail-fixtures-entry" ? .white : .clear, lineWidth: 2)
-                            .allowsHitTesting(false)
-                    }
+                    .sportFrameFocusOutline(detailFocus.wrappedValue == "sport-detail-fixtures-entry", radius: 12)
                     .onMoveCommand { direction in
                         if direction == .down, let firstFixtureID,
                            detailFocus.wrappedValue == "sport-detail-fixtures-entry" {
@@ -784,13 +765,12 @@ struct SportFrameHome: View {
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
         }
         .buttonStyle(SportFrameArtworkButtonStyle())
-        .focusEffectDisabled()
         .focused(focus, equals: focusID)
         .id(focusID)
+        .sportFrameFocusOutline(focus.wrappedValue == focusID, radius: 18)
         .overlay {
             RoundedRectangle(cornerRadius: 18)
-                .stroke(focus.wrappedValue == focusID ? Color.white.opacity(0.9) : Color.white.opacity(0.12),
-                        lineWidth: focus.wrappedValue == focusID ? 2 : 1)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
                 .allowsHitTesting(false)
         }
     }
@@ -852,17 +832,9 @@ struct SportFrameHome: View {
                     .contentShape(RoundedRectangle(cornerRadius: 9))
                 }
                 .buttonStyle(SportFrameArtworkButtonStyle())
-                .focusEffectDisabled()
                 .focused(detailFocus ?? $focusedCard,
                          equals: "\(focusScope)league-\(sport)-\(title)-\(event.idEvent)")
-                .background((detailFocus?.wrappedValue ?? focusedCard) == "\(focusScope)league-\(sport)-\(title)-\(event.idEvent)" ? Color.white.opacity(0.09) : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 9))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 9)
-                        .stroke((detailFocus?.wrappedValue ?? focusedCard) == "\(focusScope)league-\(sport)-\(title)-\(event.idEvent)" ? Color.white.opacity(0.86) : .clear,
-                                lineWidth: 2)
-                        .allowsHitTesting(false)
-                }
+                .sportFrameFocusOutline((detailFocus?.wrappedValue ?? focusedCard) == "\(focusScope)league-\(sport)-\(title)-\(event.idEvent)", radius: 9)
                 Divider().opacity(0.35)
             }
         }
@@ -937,13 +909,8 @@ struct SportFrameHome: View {
                 .background { matchCardBackdrop(home: event.homeBadge, away: event.awayBadge) }
             }
             .buttonStyle(SportFrameArtworkButtonStyle())
-            .focusEffectDisabled()
             .focused(detailFocus ?? $focusedCard, equals: focusID)
-            .overlay {
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke((detailFocus?.wrappedValue ?? focusedCard) == focusID ? Color.white.opacity(0.86) : Color.clear, lineWidth: 2)
-                    .allowsHitTesting(false)
-            }
+            .sportFrameFocusOutline((detailFocus?.wrappedValue ?? focusedCard) == focusID, radius: 14)
             .task(id: "palette-\(event.idEvent)") {
                 await teamPalettes.prepare(home: event.homeBadge, away: event.awayBadge)
             }
@@ -1788,9 +1755,13 @@ private extension View {
         self
             .focusEffectDisabled()
             .overlay {
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .stroke(focused ? Color.white.opacity(0.85) : Color.clear, lineWidth: 2)
-                    .allowsHitTesting(false)
+                ZStack {
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .fill(focused ? Color.white.opacity(0.13) : .clear)
+                    RoundedRectangle(cornerRadius: radius, style: .continuous)
+                        .strokeBorder(focused ? Color.white.opacity(0.58) : .clear, lineWidth: 1)
+                }
+                .allowsHitTesting(false)
             }
     }
 }
