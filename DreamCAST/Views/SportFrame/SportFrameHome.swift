@@ -509,6 +509,11 @@ struct SportFrameHome: View {
                         }
                         .buttonStyle(.bordered)
                         .focused(detailFocus, equals: "sport-detail-league-filter")
+                        .onMoveCommand { direction in
+                            if direction == .up && detailFocus.wrappedValue == "sport-detail-league-filter" {
+                                detailFocus.wrappedValue = "sport-detail-back"
+                            }
+                        }
                         .overlay {
                             RoundedRectangle(cornerRadius: 14)
                                 .stroke(detailFocus.wrappedValue == "sport-detail-league-filter" ? .white : .clear, lineWidth: 2)
@@ -588,42 +593,15 @@ struct SportFrameHome: View {
                     if leagueFilter.wrappedValue == "All Leagues" {
                         Text("All leagues and fixtures")
                             .font(.system(size: 30, weight: .semibold))
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 430), spacing: 22, alignment: .top)],
-                                  alignment: .leading, spacing: 22) {
+                        VStack(alignment: .leading, spacing: 38) {
                             ForEach(leagues, id: \.self) { league in
-                                sportLeagueCard(title: league, sport: sport,
-                                                events: events.filter { $0.league == league },
-                                                showAll: true, focusScope: "detail-", inSportDetail: true,
-                                                detailFocus: detailFocus)
+                                leagueLandscapeSection(league, sport: sport,
+                                    events: events.filter { $0.league == league }, focus: detailFocus)
                             }
                         }
-                        .focusSection()
                     } else {
-                        HStack {
-                            if let badge = catalog.badgeURL(for: leagueFilter.wrappedValue, sport: sport,
-                                                            idLeague: events.compactMap(\.idLeague).first) {
-                                AsyncImage(url: badge) { image in image.resizable().scaledToFit() }
-                                    placeholder: { Image(systemName: sportSymbol(sport)) }
-                                    .frame(width: 34, height: 34)
-                            }
-                            Text("\(leagueFilter.wrappedValue) · Fixtures")
-                                .font(.system(size: 30, weight: .semibold))
-                            Spacer()
-                            Text("\(events.count) games")
-                                .font(.system(size: 18, weight: .medium))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 16).padding(.vertical, 9)
-                                .background(.white.opacity(0.08), in: Capsule())
-                        }
-                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 20), GridItem(.flexible(), spacing: 20)],
-                                  alignment: .leading, spacing: 20) {
-                            ForEach(events.sorted(by: {
-                                ($0.startDate ?? .distantFuture) < ($1.startDate ?? .distantFuture)
-                            })) { event in
-                                landscapeFixtureCard(event, focus: detailFocus)
-                            }
-                        }
-                        .focusSection()
+                        leagueLandscapeSection(leagueFilter.wrappedValue, sport: sport,
+                                               events: events, focus: detailFocus)
                     }
                     if events.isEmpty { emptyPanel("No matches available for this sport on the selected day.") }
                 }
@@ -657,6 +635,40 @@ struct SportFrameHome: View {
                 }
             }
         }
+    }
+
+    private func leagueLandscapeSection(_ league: String, sport: String,
+                                        events: [SportEvent],
+                                        focus: FocusState<String?>.Binding) -> some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(spacing: 12) {
+                let leagueID = events.compactMap(\.idLeague).first
+                let badge = events.compactMap(\.leagueBadge).first ??
+                    catalog.badgeURL(for: league, sport: sport, idLeague: leagueID)
+                if let badge {
+                    AsyncImage(url: badge) { image in image.resizable().scaledToFit() }
+                        placeholder: { Image(systemName: sportSymbol(sport)) }
+                        .frame(width: 36, height: 36)
+                }
+                Text("\(league) · Fixtures")
+                    .font(.system(size: 30, weight: .semibold))
+                Spacer()
+                Text("\(events.count) games")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 16).padding(.vertical, 9)
+                    .background(.white.opacity(0.08), in: Capsule())
+            }
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 20), GridItem(.flexible(), spacing: 20)],
+                      alignment: .leading, spacing: 20) {
+                ForEach(events.sorted(by: {
+                    ($0.startDate ?? .distantFuture) < ($1.startDate ?? .distantFuture)
+                })) { event in
+                    landscapeFixtureCard(event, focus: focus)
+                }
+            }
+        }
+        .focusSection()
     }
 
     private func landscapeFixtureCard(_ event: SportEvent,
