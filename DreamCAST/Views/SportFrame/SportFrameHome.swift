@@ -428,13 +428,21 @@ struct SportFrameHome: View {
                         Image(systemName: "chevron.right").font(.system(size: 20, weight: .semibold))
                     }
                     .font(.system(size: 29, weight: .semibold))
-                    .foregroundStyle(Color.white.opacity(0.88))
-                    .padding(.horizontal, 13)
-                    .padding(.vertical, 9)
+                    .foregroundStyle(focusedCard == "sport-header-\(sport)" ? Color.black : Color.white.opacity(0.88))
+                    .padding(.horizontal, 21)
+                    .padding(.vertical, 13)
+                    .background {
+                        if focusedCard == "sport-header-\(sport)" {
+                            Capsule()
+                                .fill(LinearGradient(colors: [Color(red: 0.85, green: 0.96, blue: 1.0),
+                                                              Color(red: 0.68, green: 0.84, blue: 0.91)],
+                                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+                        }
+                    }
                 }
                 .buttonStyle(SportFrameArtworkButtonStyle())
                 .focused($focusedCard, equals: "sport-header-\(sport)")
-                .sportFrameFocusOutline(focusedCard == "sport-header-\(sport)", radius: 12)
+                .focusEffectDisabled()
             }
             ForEach(leagues, id: \.self) { league in
                 let leagueEvents = events.filter { $0.league == league }.sorted {
