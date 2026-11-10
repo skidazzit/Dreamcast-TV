@@ -159,6 +159,8 @@ struct SportFrameHome: View {
 
     private func returnToTopMenu() {
         guard selectedSport == nil, selectedEvent == nil else { return }
+        // Back from the top tabs belongs to DreamCAST's main sidebar.
+        guard focusedCard?.hasPrefix("nav-") != true else { return }
         topMenuReturnRevision += 1
     }
 
@@ -387,7 +389,8 @@ struct SportFrameHome: View {
         }
         .onExitCommand { returnToTopMenu() }
         .background {
-            SportFrameMenuBackBridge(isActive: tab == 0 && selectedSport == nil && selectedEvent == nil && focusedCard != nil) {
+            SportFrameMenuBackBridge(isActive: tab == 0 && selectedSport == nil && selectedEvent == nil &&
+                                    focusedCard != nil && focusedCard?.hasPrefix("nav-") != true) {
                 returnToTopMenu()
             }
             .frame(width: 0, height: 0)
