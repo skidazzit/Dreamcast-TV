@@ -27,6 +27,7 @@ struct SportFrameHome: View {
     @State private var pendingPlayerChannel: UnifiedChannel?
     @StateObject private var channelResolver = SportFrameBroadcastResolver()
     @FocusState private var focusedCard: String?
+    @State private var topMenuReturnRevision = 0
     @State private var premiumKeyInput = ""
     @State private var premiumKeySaved = SportsDBAccess.hasPremiumKey
     @State private var credentialRevision = 0
@@ -156,6 +157,11 @@ struct SportFrameHome: View {
         }
     }
 
+    private func returnToTopMenu() {
+        guard selectedSport == nil, selectedEvent == nil else { return }
+        topMenuReturnRevision += 1
+    }
+
     private var firstContentFocusID: String? {
         switch tab {
         case 0: return "filter-sport"
@@ -233,11 +239,16 @@ struct SportFrameHome: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .onExitCommand {
-                guard selectedSport == nil, selectedEvent == nil else { return }
+                returnToTopMenu()
+            }
+            .onChange(of: topMenuReturnRevision) { _, _ in
                 withAnimation(.easeOut(duration: 0.2)) {
                     mainScroll.scrollTo("sportsframe-top-menu", anchor: .top)
                 }
-                focusedCard = "nav-\(tab)"
+                // Wait until the top row is back on-screen before tvOS picks its focus.
+                DispatchQueue.main.async {
+                    focusedCard = "nav-\(tab)"
+                }
             }
             }
         }
@@ -374,6 +385,7 @@ struct SportFrameHome: View {
                 leagueSummarySection
             }
         }
+        .onExitCommand { returnToTopMenu() }
     }
 
     private func matchShelf(_ title: String, events: [SportEvent]) -> some View {
