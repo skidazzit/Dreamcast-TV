@@ -1005,21 +1005,27 @@ struct SportFrameHome: View {
 private final class SportFrameBroadcastResolver: ObservableObject {
     @Published private(set) var channelIDs: [String: [String]] = [:]
 
-    private struct BroadcastEntry: Codable {
-        var names: [String]
-        var fetchedAt: Date
-    }
-
     private struct SavedIndex: Codable {
-        var broadcasts: [String: BroadcastEntry] = [:]
         var aliases: [String: [String]] = [:]
     }
 
-    private static let cacheKey = "sportFrameBroadcastIndexV1"
+    private static let cacheKey = "sportFrameBroadcastLinksV2"
     private var index: SavedIndex = {
-        guard let data = UserDefaults.standard.data(forKey: "sportFrameBroadcastIndexV1"),
-              let decoded = try? JSONDecoder().decode(SavedIndex.self, from: data) else { return SavedIndex() }
-        return decoded
+        let defaults = UserDefaults.standard
+        if let data = defaults.data(forKey: "sportFrameBroadcastLinksV2"),
+           let decoded = try? JSONDecoder().decode(SavedIndex.self, from: data) {
+            defaults.removeObject(forKey: "sportFrameBroadcastIndexV1")
+            return decoded
+        }
+        // Keep existing broadcaster-to-playlist links, but erase every old
+        // event-specific broadcaster record from persistent storage.
+        let migrated = defaults.data(forKey: "sportFrameBroadcastIndexV1")
+            .flatMap { try? JSONDecoder().decode(SavedIndex.self, from: $0) } ?? SavedIndex()
+        if let data = try? JSONEncoder().encode(migrated) {
+            defaults.set(data, forKey: "sportFrameBroadcastLinksV2")
+        }
+        defaults.removeObject(forKey: "sportFrameBroadcastIndexV1")
+        return migrated
     }()
 
     private func save() {
@@ -1035,23 +1041,13 @@ private final class SportFrameBroadcastResolver: ObservableObject {
             return
         }
 
-        // One lookup per event, reused across future days. Only a small batch
-        // is fetched on each refresh to respect API limits.
-        let now = Date()
-        var requested = 0
-        for event in events {
+        // TheSportsDB broadcaster names are used for this lookup only.
+        // Do not persist a list of broadcasters by event ID.
+        var broadcasts: [String: [String]] = [:]
+        for event in events.prefix(12) {
             if Task.isCancelled { return }
-            if let cached = index.broadcasts[event.idEvent],
-               now.timeIntervalSince(cached.fetchedAt) < 12 * 3600 { continue }
-            guard requested < 12 else { break }
-            requested += 1
-            let names = await fetchBroadcasters(eventID: event.idEvent)
-            if Task.isCancelled { return }
-            index.broadcasts[event.idEvent] = BroadcastEntry(names: names, fetchedAt: Date())
+            broadcasts[event.idEvent] = await fetchBroadcasters(eventID: event.idEvent)
         }
-        if requested > 0 { save() }
-
-        let broadcasts = index.broadcasts.mapValues(\.names)
         let savedAliases = index.aliases
         let eventTerms = events.map { event in
             (id: event.idEvent, home: event.strHomeTeam ?? "",
