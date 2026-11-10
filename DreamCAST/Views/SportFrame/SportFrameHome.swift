@@ -1448,10 +1448,8 @@ struct SportFrameHome: View {
     }
 
     private func eventChannels(_ event: SportEvent, onClose: @escaping () -> Void) -> some View {
-        let matchIDs = Set(channelResolver.channelIDs[event.idEvent] ?? [])
-        let matches = matchIDs.isEmpty
-            ? ChannelMatcher.matching(event, in: sportFrameChannels)
-            : sportFrameChannels.filter { matchIDs.contains($0.id) }
+        let epgIDs = Set(channelResolver.epgChannelIDs[event.idEvent] ?? [])
+        let epgMatches = sportFrameChannels.filter { epgIDs.contains($0.id) }
         return ZStack {
             SportFrameCinematicBackdrop().ignoresSafeArea()
             VStack {
@@ -1470,18 +1468,9 @@ struct SportFrameHome: View {
                         }
                         Text("Choose a channel to watch full screen. Press Back to return to SportFrame.")
                             .foregroundStyle(.secondary)
-                        if matches.isEmpty {
-                            emptyPanel("No matching channels found. Check your Live TV playlist or browse all channels.")
-                            Button("View all channels") {
-                                onClose()
-                                selectedSport = nil
-                                tab = 1
-                            }
-                                .focused($focusedCard, equals: "event-all-channels")
-                                .sportFrameFocusOutline(focusedCard == "event-all-channels")
-                        } else {
-                            matchChannelList(matches)
-                        }
+                        SportFrameBroadcasterChannelPicker(eventID: event.idEvent,
+                            channels: sportFrameChannels, epgMatches: epgMatches,
+                            accent: accent, onPlay: playSportFrameChannel)
                     }
                     .padding(34)
                 }
@@ -1506,6 +1495,7 @@ struct SportFrameHome: View {
 @MainActor
 private final class SportFrameBroadcastResolver: ObservableObject {
     @Published private(set) var channelIDs: [String: [String]] = [:]
+    @Published private(set) var epgChannelIDs: [String: [String]] = [:]
 
     private struct SavedIndex: Codable {
         var aliases: [String: [String]] = [:]
@@ -1540,6 +1530,7 @@ private final class SportFrameBroadcastResolver: ObservableObject {
                  programs: [String: [UnifiedProgram]], sourceID: String) async {
         guard !events.isEmpty, !channels.isEmpty else {
             channelIDs = [:]
+            epgChannelIDs = [:]
             return
         }
 
@@ -1557,10 +1548,11 @@ private final class SportFrameBroadcastResolver: ObservableObject {
         }
         // UnifiedChannel and UnifiedProgram are Sendable. Keep all string scans
         // away from the tvOS focus and rendering thread.
-        let resolved = await Task.detached(priority: .background) { () -> ([String: [String]], [String: [String]]) in
+        let resolved = await Task.detached(priority: .background) { () -> ([String: [String]], [String: [String]], [String: [String]]) in
             let namedChannels = channels.map { (id: $0.id, name: ChannelMatcher.normalize($0.name)) }
             let validIDs = Set(channels.map(\.id))
             var results: [String: [String]] = [:]
+            var epgResults: [String: [String]] = [:]
             var aliases = savedAliases
 
             for event in eventTerms {
@@ -1581,8 +1573,9 @@ private final class SportFrameBroadcastResolver: ObservableObject {
                     if !direct.isEmpty { aliases[aliasKey] = direct }
                 }
 
-                // Secondary: use current guide titles near the match start.
-                if ids.isEmpty {
+                // Secondary: add EPG matches even when broadcaster names matched.
+                var epgIDs = Set<String>()
+                do {
                     let home = ChannelMatcher.normalize(event.home)
                     let away = ChannelMatcher.normalize(event.away)
                     if home.count >= 4 && away.count >= 4 {
@@ -1595,11 +1588,13 @@ private final class SportFrameBroadcastResolver: ObservableObject {
                                 let title = ChannelMatcher.normalize(program.title)
                                 return title.contains(home) && title.contains(away)
                             }) {
-                                ids.insert(channelID)
+                                epgIDs.insert(channelID)
                             }
                         }
                     }
                 }
+                ids.formUnion(epgIDs)
+                epgResults[event.id] = channels.map(\.id).filter { epgIDs.contains($0) }
 
                 // Last resort for event-specific PPV channels with no EPG.
                 if ids.isEmpty {
@@ -1613,10 +1608,11 @@ private final class SportFrameBroadcastResolver: ObservableObject {
                 }
                 results[event.id] = channels.map(\.id).filter { ids.contains($0) }
             }
-            return (results, aliases)
+            return (results, aliases, epgResults)
         }.value
         guard !Task.isCancelled else { return }
         channelIDs = resolved.0
+        epgChannelIDs = resolved.2
         if index.aliases != resolved.1 {
             index.aliases = resolved.1
             save()
@@ -1716,6 +1712,98 @@ private struct SportFrameTVListing: Decodable, Identifiable {
 
 private struct SportFrameTVListingResponse: Decodable {
     let tvevent: [SportFrameTVListing]?
+}
+
+/// Pick a provider broadcaster first, then show matching playlist channels.
+/// EPG matches stay separate and are always added below the provider results.
+private struct SportFrameBroadcasterChannelPicker: View {
+    let eventID: String
+    let channels: [UnifiedChannel]
+    let epgMatches: [UnifiedChannel]
+    let accent: Color
+    let onPlay: (UnifiedChannel) -> Void
+
+    @State private var listings: [SportFrameTVListing] = []
+    @State private var selectedName: String?
+    @State private var loading = true
+
+    private var broadcasterMatches: [UnifiedChannel] {
+        guard let selectedName else { return [] }
+        let name = ChannelMatcher.normalize(selectedName)
+        guard name.count >= 3 else { return [] }
+        return channels.filter { channel in
+            let candidate = ChannelMatcher.normalize(channel.name)
+            return (" " + candidate + " ").contains(" " + name + " ")
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("TheSportsDB broadcasters").font(.title3.bold())
+            if loading {
+                ProgressView("Loading broadcaster list…")
+            } else if listings.isEmpty {
+                Text("No broadcasters listed for this match.").foregroundStyle(.secondary)
+            } else {
+                Text("Select a broadcaster to find its channels in your Live TV playlist.")
+                    .font(.subheadline).foregroundStyle(.secondary)
+                ForEach(listings) { listing in
+                    Button { selectedName = listing.name } label: {
+                        HStack(spacing: 14) {
+                            AsyncImage(url: listing.logoURL) { image in image.resizable().scaledToFit() }
+                                placeholder: { Image(systemName: "tv") }
+                                .frame(width: 62, height: 40)
+                            Text(listing.name).font(.headline)
+                            Spacer()
+                            if selectedName == listing.name { Image(systemName: "checkmark.circle.fill") }
+                        }
+                        .padding(13)
+                        .sportFrameGlassPanel(radius: 12)
+                    }
+                    .buttonStyle(SportFrameArtworkButtonStyle())
+                }
+            }
+
+            if let selectedName {
+                Text("Playlist channels matching \(selectedName)").font(.headline)
+                if broadcasterMatches.isEmpty {
+                    Text("No playlist channels match this broadcaster name.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(broadcasterMatches) { channel in
+                        SportFrameMatchChannelRow(channel: channel, accent: accent) { onPlay(channel) }
+                    }
+                }
+            }
+
+            Text("More matches from your IPTV guide").font(.title3.bold())
+            if epgMatches.isEmpty {
+                Text("No extra channels found by match name in the guide.")
+                    .foregroundStyle(.secondary)
+            } else {
+                let seen = Set(broadcasterMatches.map(\.id))
+                ForEach(epgMatches.filter { !seen.contains($0.id) }) { channel in
+                    SportFrameMatchChannelRow(channel: channel, accent: accent) { onPlay(channel) }
+                }
+            }
+        }
+        .task(id: eventID) {
+            listings = []
+            selectedName = nil
+            loading = true
+            defer { loading = false }
+            guard let url = URL(string: "https://www.thesportsdb.com/api/v1/json/\(SportsDBAccess.apiKey)/lookuptv.php?id=\(eventID)") else { return }
+            do {
+                var request = URLRequest(url: url)
+                request.timeoutInterval = 8
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard !Task.isCancelled, (response as? HTTPURLResponse)?.statusCode == 200 else { return }
+                let rows = try JSONDecoder().decode(SportFrameTVListingResponse.self, from: data).tvevent ?? []
+                var names = Set<String>()
+                listings = rows.filter { names.insert(ChannelMatcher.normalize($0.name)).inserted }
+            } catch { /* Empty state explains missing provider listings. */ }
+        }
+    }
 }
 
 /// TheSportsDB listings are kept only in each visible card's short-lived view state.
