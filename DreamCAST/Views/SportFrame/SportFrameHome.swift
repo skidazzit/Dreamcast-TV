@@ -465,22 +465,10 @@ struct SportFrameHome: View {
                 .focused($focusedCard, equals: "sport-header-\(sport)")
                 .focusEffectDisabled()
             }
-            ForEach(leagues, id: \.self) { league in
-                let leagueEvents = events.filter { $0.league == league }.sorted {
-                    ($0.startDate ?? .distantFuture) < ($1.startDate ?? .distantFuture)
-                }
-                VStack(alignment: .leading, spacing: 16) {
-                    Text(league)
-                        .font(.system(size: 23, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.9))
-                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 4),
-                              alignment: .leading, spacing: 16) {
-                        ForEach(Array(leagueEvents.enumerated()), id: \.element.idEvent) { index, event in
-                            mainFixtureCard(event, sport: sport, league: league,
-                                            isFirst: index < 4,
-                                            isLast: index >= ((leagueEvents.count - 1) / 4) * 4)
-                        }
-                    }
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20), count: 3),
+                      alignment: .leading, spacing: 20) {
+                ForEach(leagues, id: \.self) { league in
+                    mainLeagueTable(league, sport: sport, events: events.filter { $0.league == league })
                 }
             }
             if !events.isEmpty {
@@ -495,37 +483,72 @@ struct SportFrameHome: View {
         .focusSection()
     }
 
-    private func mainFixtureCard(_ event: SportEvent, sport: String, league: String,
-                                 isFirst: Bool, isLast: Bool) -> some View {
-        let focusID = "main-fixture-\(sport)-\(league)-\(event.idEvent)"
-        return Button { selectedEvent = event } label: {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 9) {
-                    HStack(spacing: 9) {
-                        sportBadge(event.homeBadge)
-                        Text(event.strHomeTeam ?? "Home")
-                            .lineLimit(2)
-                    }
-                    HStack(spacing: 9) {
-                        sportBadge(event.awayBadge)
-                        Text(event.strAwayTeam ?? "Away")
-                            .lineLimit(2)
-                    }
+    private func mainLeagueTable(_ league: String, sport: String, events: [SportEvent]) -> some View {
+        let ordered = events.sorted { ($0.startDate ?? .distantFuture) < ($1.startDate ?? .distantFuture) }
+        let leagueID = events.compactMap(\.idLeague).first
+        let badge = events.compactMap(\.leagueBadge).first ??
+            catalog.badgeURL(for: league, sport: sport, idLeague: leagueID)
+        return VStack(alignment: .leading, spacing: 15) {
+            HStack(spacing: 12) {
+                if let badge {
+                    AsyncImage(url: badge) { image in image.resizable().scaledToFit() }
+                        placeholder: { Image(systemName: sportSymbol(sport)) }
+                        .frame(width: 34, height: 34)
+                } else {
+                    Image(systemName: sportSymbol(sport))
+                        .frame(width: 34, height: 34)
                 }
-                .font(.system(size: 16, weight: .medium))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                Text(event.timeLabel)
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.78))
-                    .fixedSize()
+                Text(league)
+                    .font(.system(size: 23, weight: .semibold))
+                    .lineLimit(2)
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, minHeight: 126, alignment: .leading)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 15))
+            ForEach(Array(ordered.enumerated()), id: \.element.idEvent) { index, event in
+                mainFixtureTableRow(event, sport: sport, league: league,
+                                    isFirst: index == 0, isLast: index == ordered.count - 1)
+            }
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .sportFrameGlassPanel(radius: 22)
+        .task(id: "main-league-badge-\(sport)-\(leagueID ?? league)") {
+            if badge == nil { await catalog.loadBadge(for: league, sport: sport, idLeague: leagueID) }
+        }
+        .focusSection()
+    }
+
+    private func compactTeamCode(_ name: String?) -> String {
+        let words = (name ?? "Team").split(separator: " ")
+        guard let last = words.last else { return "TEAM" }
+        return String(last.prefix(3)).uppercased()
+    }
+
+    private func mainFixtureTableRow(_ event: SportEvent, sport: String, league: String,
+                                     isFirst: Bool, isLast: Bool) -> some View {
+        let focusID = "main-fixture-\(sport)-\(league)-\(event.idEvent)"
+        let score = fixtures.score(for: event)
+        return Button { selectedEvent = event } label: {
+            HStack(spacing: 9) {
+                sportBadge(event.homeBadge)
+                Text(compactTeamCode(event.strHomeTeam))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                Text(score.home.flatMap { home in score.away.map { "\(home) : \($0)" } } ?? event.timeLabel)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.65))
+                    .fixedSize()
+                Text(compactTeamCode(event.strAwayTeam))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                sportBadge(event.awayBadge)
+            }
+            .font(.system(size: 18, weight: .medium))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, minHeight: 49)
+            .contentShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(SportFrameArtworkButtonStyle())
+        .accessibilityLabel("\(event.strHomeTeam ?? "Home") versus \(event.strAwayTeam ?? "Away"), \(event.timeLabel)")
         .focused($focusedCard, equals: focusID)
-        .sportFrameFocusOutline(focusedCard == focusID, radius: 15)
+        .sportFrameFocusOutline(focusedCard == focusID, radius: 10)
         .onMoveCommand { direction in
             guard focusedCard == focusID else { return }
             if (direction == .up && isFirst) || (direction == .down && isLast) {
