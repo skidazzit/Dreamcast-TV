@@ -27,6 +27,7 @@ struct SportFrameHome: View {
     @State private var pendingPlayerChannel: UnifiedChannel?
     @StateObject private var channelResolver = SportFrameBroadcastResolver()
     @FocusState private var focusedCard: String?
+    @FocusState private var detailFocusedCard: String?
     @State private var premiumKeyInput = ""
     @State private var premiumKeySaved = SportsDBAccess.hasPremiumKey
     @State private var credentialRevision = 0
@@ -473,8 +474,8 @@ struct SportFrameHome: View {
                         Spacer()
                         Button("Back to Sports") { selectedSport = nil }
                             .buttonStyle(.bordered)
-                            .focused($focusedCard, equals: "sport-detail-back")
-                            .sportFrameFocusOutline(focusedCard == "sport-detail-back")
+                            .focused($detailFocusedCard, equals: "sport-detail-back")
+                            .sportFrameFocusOutline(detailFocusedCard == "sport-detail-back")
                     }
 
                     if !featured.isEmpty {
@@ -488,6 +489,7 @@ struct SportFrameHome: View {
                                 }
                                 .padding(.vertical, 12)
                             }
+                            .focusSection()
                         }
                     }
 
@@ -524,12 +526,13 @@ struct SportFrameHome: View {
                                             .frame(width: 330, alignment: .leading)
                                         }
                                         .buttonStyle(SportFrameArtworkButtonStyle())
-                                        .focused($focusedCard, equals: "highlight-\(video.id)")
-                                        .sportFrameFocusOutline(focusedCard == "highlight-\(video.id)")
+                                        .focused($detailFocusedCard, equals: "highlight-\(video.id)")
+                                        .sportFrameFocusOutline(detailFocusedCard == "highlight-\(video.id)", radius: 14)
                                     }
                                 }
                                 .padding(.vertical, 12)
                             }
+                            .focusSection()
                         }
                         if let highlightMessage {
                             Text(highlightMessage).foregroundStyle(.orange)
@@ -546,6 +549,7 @@ struct SportFrameHome: View {
                                             showAll: true, focusScope: "detail-", inSportDetail: true)
                         }
                     }
+                    .focusSection()
                     if events.isEmpty { emptyPanel("No matches available for this sport on the selected day.") }
                 }
                 .padding(50)
@@ -555,6 +559,9 @@ struct SportFrameHome: View {
         .task(id: sport) {
             highlightMessage = nil
             await sportHighlights.fetchYesterday(sport: sport)
+        }
+        .onAppear {
+            DispatchQueue.main.async { detailFocusedCard = "sport-detail-back" }
         }
         .sheet(item: $selectedDetailEvent, onDismiss: {
             if let channel = pendingPlayerChannel {
@@ -637,12 +644,13 @@ struct SportFrameHome: View {
                 }
                 .buttonStyle(SportFrameArtworkButtonStyle())
                 .focusEffectDisabled()
-                .focused($focusedCard, equals: "\(focusScope)league-\(sport)-\(title)-\(event.idEvent)")
-                .background(focusedCard == "\(focusScope)league-\(sport)-\(title)-\(event.idEvent)" ? Color.white.opacity(0.09) : Color.clear,
+                .focused(inSportDetail ? $detailFocusedCard : $focusedCard,
+                         equals: "\(focusScope)league-\(sport)-\(title)-\(event.idEvent)")
+                .background((inSportDetail ? detailFocusedCard : focusedCard) == "\(focusScope)league-\(sport)-\(title)-\(event.idEvent)" ? Color.white.opacity(0.09) : Color.clear,
                             in: RoundedRectangle(cornerRadius: 9))
                 .overlay {
                     RoundedRectangle(cornerRadius: 9)
-                        .stroke(focusedCard == "\(focusScope)league-\(sport)-\(title)-\(event.idEvent)" ? Color.white.opacity(0.86) : .clear,
+                        .stroke((inSportDetail ? detailFocusedCard : focusedCard) == "\(focusScope)league-\(sport)-\(title)-\(event.idEvent)" ? Color.white.opacity(0.86) : .clear,
                                 lineWidth: 2)
                         .allowsHitTesting(false)
                 }
@@ -720,10 +728,10 @@ struct SportFrameHome: View {
             }
             .buttonStyle(SportFrameArtworkButtonStyle())
             .focusEffectDisabled()
-            .focused($focusedCard, equals: focusID)
+            .focused(inSportDetail ? $detailFocusedCard : $focusedCard, equals: focusID)
             .overlay {
                 RoundedRectangle(cornerRadius: 14)
-                    .stroke(focusedCard == focusID ? Color.white.opacity(0.86) : Color.clear, lineWidth: 2)
+                    .stroke((inSportDetail ? detailFocusedCard : focusedCard) == focusID ? Color.white.opacity(0.86) : Color.clear, lineWidth: 2)
                     .allowsHitTesting(false)
             }
             .task(id: "palette-\(event.idEvent)") {
