@@ -539,8 +539,12 @@ struct SportFrameHome: View {
                         }
                         Spacer()
                         Button("Back to Sports") { selectedSport = nil }
-                            .buttonStyle(.bordered)
+                            .font(.system(size: 21, weight: .semibold))
+                            .padding(.horizontal, 22).padding(.vertical, 14)
+                            .background(.white.opacity(0.09), in: Capsule())
+                            .buttonStyle(SportFrameArtworkButtonStyle())
                             .focused(detailFocus, equals: "sport-detail-back")
+                            .sportFrameFocusOutline(detailFocus.wrappedValue == "sport-detail-back", radius: 26)
                             .prefersDefaultFocus(in: focusScope)
                     }
 
@@ -556,9 +560,12 @@ struct SportFrameHome: View {
                         } label: {
                             Label(leagueFilter.wrappedValue, systemImage: "line.3.horizontal.decrease")
                                 .font(.system(size: 21, weight: .semibold))
+                                .padding(.horizontal, 20).padding(.vertical, 13)
+                                .background(.white.opacity(0.09), in: Capsule())
                         }
-                        .buttonStyle(.bordered)
+                        .buttonStyle(SportFrameArtworkButtonStyle())
                         .focused(detailFocus, equals: "sport-detail-league-filter")
+                        .sportFrameFocusOutline(detailFocus.wrappedValue == "sport-detail-league-filter", radius: 25)
                         .onMoveCommand { direction in
                             if direction == .up && detailFocus.wrappedValue == "sport-detail-league-filter" {
                                 detailFocus.wrappedValue = "sport-detail-back"
@@ -632,7 +639,7 @@ struct SportFrameHome: View {
                                                 moveToDetailFixtureEntry(focus: detailFocus, scroll: detailScroll)
                                             }
                                         }
-                                        .sportFrameFocusOutline(detailFocus.wrappedValue == "highlight-\(video.id)", radius: 14)
+                                        .sportFrameFocusOutline(detailFocus.wrappedValue == "highlight-\(video.id)", radius: 14, outset: 3)
                                     }
                                 }
                                 .padding(.vertical, 12)
@@ -655,6 +662,8 @@ struct SportFrameHome: View {
                         }
                         .font(.system(size: 30, weight: .semibold))
                         .foregroundStyle(.white.opacity(0.92))
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 9)
                     }
                     .buttonStyle(SportFrameArtworkButtonStyle())
                     .focused(detailFocus, equals: "sport-detail-fixtures-entry")
@@ -824,7 +833,7 @@ struct SportFrameHome: View {
         .buttonStyle(SportFrameArtworkButtonStyle())
         .focused(focus, equals: focusID)
         .id(focusID)
-        .sportFrameFocusOutline(focus.wrappedValue == focusID, radius: 15)
+        .sportFrameFocusOutline(focus.wrappedValue == focusID, radius: 15, outset: 3)
         .onMoveCommand { direction in
             guard focus.wrappedValue == focusID else { return }
             if (direction == .up && isFirst) || (direction == .down && isLast) {
@@ -973,7 +982,8 @@ struct SportFrameHome: View {
             }
             .buttonStyle(SportFrameArtworkButtonStyle())
             .focused(detailFocus ?? $focusedCard, equals: focusID)
-            .sportFrameFocusOutline((detailFocus?.wrappedValue ?? focusedCard) == focusID, radius: 14)
+            .sportFrameFocusOutline((detailFocus?.wrappedValue ?? focusedCard) == focusID,
+                                    radius: 14, outset: inSportDetail ? 3 : 0)
             .task(id: "palette-\(event.idEvent)") {
                 await teamPalettes.prepare(home: event.homeBadge, away: event.awayBadge)
             }
@@ -1814,7 +1824,7 @@ private extension View {
         modifier(SportFrameGlassPanelModifier(radius: radius))
     }
 
-    func sportFrameFocusOutline(_ focused: Bool, radius: CGFloat = 10) -> some View {
+    func sportFrameFocusOutline(_ focused: Bool, radius: CGFloat = 10, outset: CGFloat = 0) -> some View {
         self
             .focusEffectDisabled()
             .overlay {
@@ -1824,6 +1834,7 @@ private extension View {
                     RoundedRectangle(cornerRadius: radius, style: .continuous)
                         .strokeBorder(focused ? Color.white.opacity(0.58) : .clear, lineWidth: 1)
                 }
+                .padding(-outset)
                 .allowsHitTesting(false)
             }
     }
