@@ -465,7 +465,7 @@ struct SportFrameHome: View {
                 .focused($focusedCard, equals: "sport-header-\(sport)")
                 .focusEffectDisabled()
             }
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20), count: 3),
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20, alignment: .top), count: 3),
                       alignment: .leading, spacing: 20) {
                 ForEach(leagues, id: \.self) { league in
                     mainLeagueTable(league, sport: sport, events: events.filter { $0.league == league })
@@ -502,11 +502,11 @@ struct SportFrameHome: View {
                     .font(.system(size: 23, weight: .semibold))
                     .lineLimit(2)
             }
-            if ordered.count > 10 {
+            if ordered.count > 5 {
                 ScrollView(.vertical) {
                     mainLeagueRows(ordered, sport: sport, league: league)
                 }
-                .frame(height: 800)
+                .frame(height: 400)
                 .scrollIndicators(.visible)
                 Text("\(ordered.count) matches · Scroll for more")
                     .font(.system(size: 14))
