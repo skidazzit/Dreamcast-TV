@@ -20,7 +20,10 @@ struct SportFrameHome: View {
     @State private var matchSportFilter = "All Sports"
     @State private var matchLeagueFilter = "All Leagues"
     @State private var selectedEvent: SportEvent?
+    @State private var selectedDetailEvent: SportEvent?
     @State private var selectedSport: SportFrameSportSelection?
+    @StateObject private var sportHighlights = SportFrameHighlightsStore()
+    @State private var highlightMessage: String?
     @State private var pendingPlayerChannel: UnifiedChannel?
     @StateObject private var channelResolver = SportFrameBroadcastResolver()
     @FocusState private var focusedCard: String?
@@ -275,7 +278,7 @@ struct SportFrameHome: View {
                 }
             }
         }) { event in
-            eventChannels(event)
+            eventChannels(event, onClose: { selectedEvent = nil })
         }
         .sheet(item: $selectedSport) { selection in
             sportDetailPage(selection.name)
@@ -476,15 +479,60 @@ struct SportFrameHome: View {
 
                     if !featured.isEmpty {
                         VStack(alignment: .leading, spacing: 14) {
-                            Text("Match highlights").font(.system(size: 30, weight: .semibold))
+                            Text("Featured matches").font(.system(size: 30, weight: .semibold))
                             ScrollView(.horizontal) {
                                 LazyHStack(alignment: .top, spacing: 18) {
                                     ForEach(featured) { event in
-                                        matchCard(event, focusScope: "detail-\(sport)")
+                                        matchCard(event, focusScope: "detail-\(sport)", inSportDetail: true)
                                     }
                                 }
                                 .padding(.vertical, 12)
                             }
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Yesterday's video highlights")
+                            .font(.system(size: 30, weight: .semibold))
+                        if sportHighlights.loading {
+                            ProgressView("Finding highlights…")
+                        } else if sportHighlights.videos.isEmpty {
+                            Text("No video highlights were found for yesterday.")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ScrollView(.horizontal) {
+                                LazyHStack(alignment: .top, spacing: 18) {
+                                    ForEach(sportHighlights.videos) { video in
+                                        Button { openSportHighlight(video) } label: {
+                                            VStack(alignment: .leading, spacing: 10) {
+                                                AsyncImage(url: video.thumbnailURL) { image in
+                                                    image.resizable().scaledToFill()
+                                                } placeholder: {
+                                                    ZStack {
+                                                        Color.white.opacity(0.08)
+                                                        Image(systemName: "play.rectangle.fill")
+                                                            .foregroundStyle(accent).font(.largeTitle)
+                                                    }
+                                                }
+                                                .frame(width: 330, height: 185)
+                                                .clipped()
+                                                .clipShape(RoundedRectangle(cornerRadius: 14))
+                                                Text(video.title)
+                                                    .font(.system(size: 18, weight: .semibold))
+                                                    .lineLimit(2)
+                                            }
+                                            .frame(width: 330, alignment: .leading)
+                                        }
+                                        .buttonStyle(SportFrameArtworkButtonStyle())
+                                        .focused($focusedCard, equals: "highlight-\(video.id)")
+                                        .sportFrameFocusOutline(focusedCard == "highlight-\(video.id)")
+                                    }
+                                }
+                                .padding(.vertical, 12)
+                            }
+                        }
+                        if let highlightMessage {
+                            Text(highlightMessage).foregroundStyle(.orange)
                         }
                     }
 
@@ -495,7 +543,7 @@ struct SportFrameHome: View {
                         ForEach(leagues, id: \.self) { league in
                             sportLeagueCard(title: league, sport: sport,
                                             events: events.filter { $0.league == league },
-                                            showAll: true, focusScope: "detail-")
+                                            showAll: true, focusScope: "detail-", inSportDetail: true)
                         }
                     }
                     if events.isEmpty { emptyPanel("No matches available for this sport on the selected day.") }
@@ -504,10 +552,37 @@ struct SportFrameHome: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .task(id: sport) {
+            highlightMessage = nil
+            await sportHighlights.fetchYesterday(sport: sport)
+        }
+        .sheet(item: $selectedDetailEvent, onDismiss: {
+            if let channel = pendingPlayerChannel {
+                pendingPlayerChannel = nil
+                DispatchQueue.main.async { presentSportFrameChannel(channel) }
+            }
+        }) { event in
+            eventChannels(event, onClose: { selectedDetailEvent = nil })
+        }
+    }
+
+    private func openSportHighlight(_ video: SportFrameVideoHighlight) {
+        guard let url = video.youtubeAppURL else {
+            highlightMessage = "This highlight has no valid YouTube link."
+            return
+        }
+        UIApplication.shared.open(url) { opened in
+            if !opened {
+                Task { @MainActor in
+                    highlightMessage = "Install YouTube on Apple TV to watch this highlight."
+                }
+            }
+        }
     }
 
     private func sportLeagueCard(title: String, sport: String, events: [SportEvent],
-                                 showAll: Bool = false, focusScope: String = "") -> some View {
+                                 showAll: Bool = false, focusScope: String = "",
+                                 inSportDetail: Bool = false) -> some View {
         let leagueID = events.compactMap(\.idLeague).first
         let badge = events.compactMap(\.leagueBadge).first ?? catalog.badgeURL(for: title, sport: sport, idLeague: leagueID)
         return VStack(alignment: .leading, spacing: 15) {
@@ -529,7 +604,7 @@ struct SportFrameHome: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             ForEach(events.prefix(showAll ? events.count : 5)) { event in
-                Button { selectedEvent = event } label: {
+                Button { if inSportDetail { selectedDetailEvent = event } else { selectedEvent = event } } label: {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(alignment: .top, spacing: 10) {
                             sportBadge(event.homeBadge)
@@ -602,11 +677,11 @@ struct SportFrameHome: View {
         .frame(width: 27, height: 27)
     }
 
-    private func matchCard(_ event: SportEvent, focusScope: String) -> some View {
+    private func matchCard(_ event: SportEvent, focusScope: String, inSportDetail: Bool = false) -> some View {
         let live = isLive(event)
         let focusID = "match-\(focusScope)-\(event.idEvent)"
         return VStack(alignment: .leading, spacing: 9) {
-            Button { selectedEvent = event } label: {
+            Button { if inSportDetail { selectedDetailEvent = event } else { selectedEvent = event } } label: {
                 VStack(alignment: .leading, spacing: 9) {
                     HStack(alignment: .top, spacing: 8) {
                         Text(event.league)
@@ -823,7 +898,10 @@ struct SportFrameHome: View {
     }
 
     private func playSportFrameChannel(_ channel: UnifiedChannel) {
-        if selectedEvent != nil {
+        if selectedDetailEvent != nil {
+            pendingPlayerChannel = channel
+            selectedDetailEvent = nil
+        } else if selectedEvent != nil {
             pendingPlayerChannel = channel
             selectedEvent = nil
         } else {
@@ -1026,7 +1104,7 @@ struct SportFrameHome: View {
         }
     }
 
-    private func eventChannels(_ event: SportEvent) -> some View {
+    private func eventChannels(_ event: SportEvent, onClose: @escaping () -> Void) -> some View {
         let matchIDs = Set(channelResolver.channelIDs[event.idEvent] ?? [])
         let matches = matchIDs.isEmpty
             ? ChannelMatcher.matching(event, in: sportFrameChannels)
@@ -1043,7 +1121,7 @@ struct SportFrameHome: View {
                                 Text(event.name).font(.largeTitle.bold())
                             }
                             Spacer()
-                            Button("Close") { selectedEvent = nil }
+                            Button("Close", action: onClose)
                                 .focused($focusedCard, equals: "event-close")
                                 .sportFrameFocusOutline(focusedCard == "event-close")
                         }
@@ -1051,7 +1129,11 @@ struct SportFrameHome: View {
                             .foregroundStyle(.secondary)
                         if matches.isEmpty {
                             emptyPanel("No matching channels found. Check your Live TV playlist or browse all channels.")
-                            Button("View all channels") { selectedEvent = nil; tab = 1 }
+                            Button("View all channels") {
+                                onClose()
+                                selectedSport = nil
+                                tab = 1
+                            }
                                 .focused($focusedCard, equals: "event-all-channels")
                                 .sportFrameFocusOutline(focusedCard == "event-all-channels")
                         } else {
@@ -1262,6 +1344,64 @@ private struct SportFrameMatchChannelRow: View {
 private struct SportFrameSportSelection: Identifiable {
     let name: String
     var id: String { name }
+}
+
+private struct SportFrameVideoHighlight: Decodable, Identifiable {
+    let idEvent: String?
+    let strEvent: String?
+    let strVideo: String?
+    let strThumb: String?
+    let strPoster: String?
+
+    var id: String { "\(idEvent ?? "")-\(strVideo ?? "")" }
+    var title: String { strEvent ?? "Match highlight" }
+    var thumbnailURL: URL? { (strThumb ?? strPoster).flatMap(URL.init(string:)) }
+    var youtubeAppURL: URL? {
+        guard let strVideo, let url = URL(string: strVideo),
+              let host = url.host?.lowercased(),
+              host == "youtube.com" || host == "www.youtube.com" || host == "m.youtube.com" || host == "youtu.be" else { return nil }
+        let videoID = host == "youtu.be" ? String(url.path.dropFirst())
+            : URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "v" })?.value
+        guard let videoID else { return nil }
+        return YouTubeTrailer.appURL(videoID: videoID)
+    }
+}
+
+private struct SportFrameVideoResponse: Decodable {
+    let tvhighlights: [SportFrameVideoHighlight]?
+}
+
+@MainActor
+private final class SportFrameHighlightsStore: ObservableObject {
+    @Published private(set) var videos: [SportFrameVideoHighlight] = []
+    @Published private(set) var loading = false
+    private var cached: [String: [SportFrameVideoHighlight]] = [:]
+
+    func fetchYesterday(sport: String) async {
+        let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date().addingTimeInterval(-86_400)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = .current
+        let date = formatter.string(from: yesterday)
+        let cacheKey = "\(date)|\(sport)"
+        if let saved = cached[cacheKey] { videos = saved; loading = false; return }
+
+        videos = []
+        loading = true
+        defer { loading = false }
+        var parts = URLComponents(string: "https://www.thesportsdb.com/api/v1/json/\(SportsDBAccess.apiKey)/eventshighlights.php")!
+        parts.queryItems = [URLQueryItem(name: "d", value: date), URLQueryItem(name: "s", value: sport)]
+        guard let url = parts.url else { return }
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard !Task.isCancelled, (response as? HTTPURLResponse)?.statusCode == 200 else { return }
+            let fetched = try JSONDecoder().decode(SportFrameVideoResponse.self, from: data).tvhighlights ?? []
+            cached[cacheKey] = fetched
+            videos = fetched
+        } catch {
+            // An empty state is preferable to holding up remote navigation.
+        }
+    }
 }
 
 private struct SportFrameCinematicBackdrop: View {
