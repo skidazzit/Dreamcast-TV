@@ -27,8 +27,6 @@ struct SportFrameHome: View {
     @State private var pendingPlayerChannel: UnifiedChannel?
     @StateObject private var channelResolver = SportFrameBroadcastResolver()
     @FocusState private var focusedCard: String?
-    @FocusState private var detailFocusedCard: String?
-    @Namespace private var sportDetailFocusScope
     @State private var premiumKeyInput = ""
     @State private var premiumKeySaved = SportsDBAccess.hasPremiumKey
     @State private var credentialRevision = 0
@@ -283,7 +281,9 @@ struct SportFrameHome: View {
             eventChannels(event, onClose: { selectedEvent = nil })
         }
         .sheet(item: $selectedSport) { selection in
-            sportDetailPage(selection.name)
+            SportFrameDetailFocusHost { detailFocus, scope in
+                sportDetailPage(selection.name, detailFocus: detailFocus, focusScope: scope)
+            }
         }
     }
 
@@ -450,7 +450,9 @@ struct SportFrameHome: View {
         return 4
     }
 
-    private func sportDetailPage(_ sport: String) -> some View {
+    private func sportDetailPage(_ sport: String,
+                                 detailFocus: FocusState<String?>.Binding,
+                                 focusScope: Namespace.ID) -> some View {
         let events = filteredMatches.filter { fixtures.eventSports[$0.idEvent] == sport }
         let leagues = Array(Set(events.map(\.league))).sorted {
             let left = leagueRank($0, sport: sport)
@@ -475,10 +477,10 @@ struct SportFrameHome: View {
                         Spacer()
                         Button("Back to Sports") { selectedSport = nil }
                             .buttonStyle(.bordered)
-                            .focused($detailFocusedCard, equals: "sport-detail-back")
-                            .prefersDefaultFocus(in: sportDetailFocusScope)
+                            .focused(detailFocus, equals: "sport-detail-back")
+                            .prefersDefaultFocus(in: focusScope)
                             .overlay {
-                                Capsule().stroke(detailFocusedCard == "sport-detail-back" ? .white : .clear, lineWidth: 2)
+                                Capsule().stroke(detailFocus.wrappedValue == "sport-detail-back" ? .white : .clear, lineWidth: 2)
                                     .allowsHitTesting(false)
                             }
                     }
@@ -489,7 +491,8 @@ struct SportFrameHome: View {
                             ScrollView(.horizontal) {
                                 LazyHStack(alignment: .top, spacing: 18) {
                                     ForEach(featured) { event in
-                                        matchCard(event, focusScope: "detail-\(sport)", inSportDetail: true)
+                                        matchCard(event, focusScope: "detail-\(sport)", inSportDetail: true,
+                                                  detailFocus: detailFocus)
                                     }
                                 }
                                 .padding(.vertical, 12)
@@ -531,10 +534,11 @@ struct SportFrameHome: View {
                                             .frame(width: 330, alignment: .leading)
                                         }
                                         .buttonStyle(SportFrameArtworkButtonStyle())
-                                        .focused($detailFocusedCard, equals: "highlight-\(video.id)")
+                                        .focused(detailFocus, equals: "highlight-\(video.id)")
+                                        .focusEffectDisabled()
                                         .overlay {
                                             RoundedRectangle(cornerRadius: 14)
-                                                .stroke(detailFocusedCard == "highlight-\(video.id)" ? .white : .clear, lineWidth: 2)
+                                                .stroke(detailFocus.wrappedValue == "highlight-\(video.id)" ? .white : .clear, lineWidth: 2)
                                                 .allowsHitTesting(false)
                                         }
                                     }
@@ -555,7 +559,8 @@ struct SportFrameHome: View {
                         ForEach(leagues, id: \.self) { league in
                             sportLeagueCard(title: league, sport: sport,
                                             events: events.filter { $0.league == league },
-                                            showAll: true, focusScope: "detail-", inSportDetail: true)
+                                            showAll: true, focusScope: "detail-", inSportDetail: true,
+                                            detailFocus: detailFocus)
                         }
                     }
                     .focusSection()
@@ -564,14 +569,10 @@ struct SportFrameHome: View {
                 .padding(50)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .focusScope(sportDetailFocusScope)
         }
         .task(id: sport) {
             highlightMessage = nil
             await sportHighlights.fetchYesterday(sport: sport)
-        }
-        .onAppear {
-            DispatchQueue.main.async { detailFocusedCard = "sport-detail-back" }
         }
         .sheet(item: $selectedDetailEvent, onDismiss: {
             if let channel = pendingPlayerChannel {
@@ -599,7 +600,8 @@ struct SportFrameHome: View {
 
     private func sportLeagueCard(title: String, sport: String, events: [SportEvent],
                                  showAll: Bool = false, focusScope: String = "",
-                                 inSportDetail: Bool = false) -> some View {
+                                 inSportDetail: Bool = false,
+                                 detailFocus: FocusState<String?>.Binding? = nil) -> some View {
         let leagueID = events.compactMap(\.idLeague).first
         let badge = events.compactMap(\.leagueBadge).first ?? catalog.badgeURL(for: title, sport: sport, idLeague: leagueID)
         return VStack(alignment: .leading, spacing: 15) {
@@ -653,14 +655,14 @@ struct SportFrameHome: View {
                     .contentShape(RoundedRectangle(cornerRadius: 9))
                 }
                 .buttonStyle(SportFrameArtworkButtonStyle())
-                .focusEffectDisabled(!inSportDetail)
-                .focused(inSportDetail ? $detailFocusedCard : $focusedCard,
+                .focusEffectDisabled()
+                .focused(detailFocus ?? $focusedCard,
                          equals: "\(focusScope)league-\(sport)-\(title)-\(event.idEvent)")
-                .background((inSportDetail ? detailFocusedCard : focusedCard) == "\(focusScope)league-\(sport)-\(title)-\(event.idEvent)" ? Color.white.opacity(0.09) : Color.clear,
+                .background((detailFocus?.wrappedValue ?? focusedCard) == "\(focusScope)league-\(sport)-\(title)-\(event.idEvent)" ? Color.white.opacity(0.09) : Color.clear,
                             in: RoundedRectangle(cornerRadius: 9))
                 .overlay {
                     RoundedRectangle(cornerRadius: 9)
-                        .stroke((inSportDetail ? detailFocusedCard : focusedCard) == "\(focusScope)league-\(sport)-\(title)-\(event.idEvent)" ? Color.white.opacity(0.86) : .clear,
+                        .stroke((detailFocus?.wrappedValue ?? focusedCard) == "\(focusScope)league-\(sport)-\(title)-\(event.idEvent)" ? Color.white.opacity(0.86) : .clear,
                                 lineWidth: 2)
                         .allowsHitTesting(false)
                 }
@@ -695,7 +697,8 @@ struct SportFrameHome: View {
         .frame(width: 27, height: 27)
     }
 
-    private func matchCard(_ event: SportEvent, focusScope: String, inSportDetail: Bool = false) -> some View {
+    private func matchCard(_ event: SportEvent, focusScope: String, inSportDetail: Bool = false,
+                           detailFocus: FocusState<String?>.Binding? = nil) -> some View {
         let live = isLive(event)
         let focusID = "match-\(focusScope)-\(event.idEvent)"
         return VStack(alignment: .leading, spacing: 9) {
@@ -737,11 +740,11 @@ struct SportFrameHome: View {
                 .background { matchCardBackdrop(home: event.homeBadge, away: event.awayBadge) }
             }
             .buttonStyle(SportFrameArtworkButtonStyle())
-            .focusEffectDisabled(!inSportDetail)
-            .focused(inSportDetail ? $detailFocusedCard : $focusedCard, equals: focusID)
+            .focusEffectDisabled()
+            .focused(detailFocus ?? $focusedCard, equals: focusID)
             .overlay {
                 RoundedRectangle(cornerRadius: 14)
-                    .stroke((inSportDetail ? detailFocusedCard : focusedCard) == focusID ? Color.white.opacity(0.86) : Color.clear, lineWidth: 2)
+                    .stroke((detailFocus?.wrappedValue ?? focusedCard) == focusID ? Color.white.opacity(0.86) : Color.clear, lineWidth: 2)
                     .allowsHitTesting(false)
             }
             .task(id: "palette-\(event.idEvent)") {
@@ -1362,6 +1365,22 @@ private struct SportFrameMatchChannelRow: View {
 private struct SportFrameSportSelection: Identifiable {
     let name: String
     var id: String { name }
+}
+
+/// Owns focus for the presented sport screen, separate from the main Sports page.
+private struct SportFrameDetailFocusHost<Content: View>: View {
+    @FocusState private var focusedItem: String?
+    @Namespace private var scope
+    let content: (FocusState<String?>.Binding, Namespace.ID) -> Content
+
+    var body: some View {
+        content($focusedItem, scope)
+            .focusScope(scope)
+            .task {
+                await Task.yield()
+                focusedItem = "sport-detail-back"
+            }
+    }
 }
 
 private struct SportFrameVideoHighlight: Decodable, Identifiable {
