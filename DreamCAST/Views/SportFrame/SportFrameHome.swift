@@ -769,12 +769,15 @@ struct SportFrameHome: View {
                     .padding(.horizontal, 16).padding(.vertical, 9)
                     .background(.white.opacity(0.08), in: Capsule())
             }
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 20), GridItem(.flexible(), spacing: 20)],
-                      alignment: .leading, spacing: 20) {
-                ForEach(events.sorted(by: {
+            let orderedEvents = events.sorted(by: {
                     ($0.startDate ?? .distantFuture) < ($1.startDate ?? .distantFuture)
-                })) { event in
-                    landscapeFixtureCard(event, focus: focus)
+                })
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 4),
+                      alignment: .leading, spacing: 16) {
+                ForEach(Array(orderedEvents.enumerated()), id: \.element.idEvent) { index, event in
+                    landscapeFixtureCard(event, focus: focus,
+                                         isFirst: index < 4,
+                                         isLast: index >= ((orderedEvents.count - 1) / 4) * 4)
                 }
             }
         }
@@ -782,43 +785,54 @@ struct SportFrameHome: View {
     }
 
     private func landscapeFixtureCard(_ event: SportEvent,
-                                      focus: FocusState<String?>.Binding) -> some View {
+                                      focus: FocusState<String?>.Binding,
+                                      isFirst: Bool, isLast: Bool) -> some View {
         let focusID = "landscape-fixture-\(event.idEvent)"
         let score = fixtures.score(for: event)
         return Button { selectedDetailEvent = event } label: {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 12) {
-                    matchBadge(event.homeBadge)
-                    Text(event.strHomeTeam ?? "Home")
-                        .font(.system(size: 20, weight: .semibold))
-                        .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
-                    Text(score.home.flatMap { home in score.away.map { "\(home) – \($0)" } } ?? "VS")
-                        .font(.system(size: 21, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.85))
-                        .fixedSize()
-                    matchBadge(event.awayBadge)
-                    Text(event.strAwayTeam ?? "Away")
-                        .font(.system(size: 20, weight: .semibold))
-                        .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
-                    Text(event.timeLabel)
-                        .font(.system(size: 18, weight: .semibold))
-                        .fixedSize()
-                        .padding(.horizontal, 10).padding(.vertical, 8)
-                        .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 9) {
+                        HStack(spacing: 9) {
+                            sportBadge(event.homeBadge)
+                            Text(event.strHomeTeam ?? "Home").lineLimit(2)
+                        }
+                        HStack(spacing: 9) {
+                            sportBadge(event.awayBadge)
+                            Text(event.strAwayTeam ?? "Away").lineLimit(2)
+                        }
+                    }
+                    .font(.system(size: 16, weight: .medium))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    VStack(alignment: .trailing, spacing: 4) {
+                        if let home = score.home, let away = score.away {
+                            Text("\(home) – \(away)")
+                        }
+                        Text(event.timeLabel)
+                    }
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.78))
+                    .fixedSize()
                 }
                 Divider().overlay(.white.opacity(0.15))
                 SportFrameFixtureBroadcasters(eventID: event.idEvent)
             }
-            .padding(18)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 148, alignment: .leading)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 15))
         }
         .buttonStyle(SportFrameArtworkButtonStyle())
         .focused(focus, equals: focusID)
         .id(focusID)
-        .sportFrameFocusOutline(focus.wrappedValue == focusID, radius: 18)
+        .sportFrameFocusOutline(focus.wrappedValue == focusID, radius: 15)
+        .onMoveCommand { direction in
+            guard focus.wrappedValue == focusID else { return }
+            if (direction == .up && isFirst) || (direction == .down && isLast) {
+                focus.wrappedValue = "sport-detail-fixtures-entry"
+            }
+        }
         .overlay {
-            RoundedRectangle(cornerRadius: 18)
+            RoundedRectangle(cornerRadius: 15)
                 .stroke(Color.white.opacity(0.12), lineWidth: 1)
                 .allowsHitTesting(false)
         }
