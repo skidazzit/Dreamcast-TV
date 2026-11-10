@@ -545,8 +545,8 @@ struct SportFrameHome: View {
                                 if direction == .down, detailFocus.wrappedValue?.hasPrefix("match-detail-") == true {
                                     if let firstHighlight = videos.first {
                                         detailFocus.wrappedValue = "highlight-\(firstHighlight.id)"
-                                    } else if let firstFixtureID {
-                                        moveToDetailFixture(firstFixtureID, focus: detailFocus, scroll: detailScroll)
+                                    } else if firstFixtureID != nil {
+                                        moveToDetailFixtureEntry(focus: detailFocus, scroll: detailScroll)
                                     }
                                 }
                             }
@@ -587,6 +587,11 @@ struct SportFrameHome: View {
                                         }
                                         .buttonStyle(SportFrameArtworkButtonStyle())
                                         .focused(detailFocus, equals: "highlight-\(video.id)")
+                                        .onMoveCommand { direction in
+                                            if direction == .down && detailFocus.wrappedValue == "highlight-\(video.id)" {
+                                                moveToDetailFixtureEntry(focus: detailFocus, scroll: detailScroll)
+                                            }
+                                        }
                                         .focusEffectDisabled()
                                         .overlay {
                                             RoundedRectangle(cornerRadius: 14)
@@ -604,9 +609,36 @@ struct SportFrameHome: View {
                         }
                     }
 
+                    Button {
+                        if let firstFixtureID {
+                            moveToDetailFixture(firstFixtureID, focus: detailFocus, scroll: detailScroll)
+                        }
+                    } label: {
+                        HStack(spacing: 12) {
+                            Text(leagueFilter.wrappedValue == "All Leagues" ? "All leagues and fixtures" : "Browse fixtures")
+                            Image(systemName: "chevron.down").font(.system(size: 22, weight: .semibold))
+                        }
+                        .font(.system(size: 30, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.92))
+                    }
+                    .buttonStyle(SportFrameArtworkButtonStyle())
+                    .focused(detailFocus, equals: "sport-detail-fixtures-entry")
+                    .focusEffectDisabled()
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(detailFocus.wrappedValue == "sport-detail-fixtures-entry" ? .white : .clear, lineWidth: 2)
+                            .allowsHitTesting(false)
+                    }
+                    .onMoveCommand { direction in
+                        if direction == .down, let firstFixtureID,
+                           detailFocus.wrappedValue == "sport-detail-fixtures-entry" {
+                            moveToDetailFixture(firstFixtureID, focus: detailFocus, scroll: detailScroll)
+                        }
+                    }
+                    .id("sport-detail-fixtures-entry")
+                    .focusSection()
+
                     if leagueFilter.wrappedValue == "All Leagues" {
-                        Text("All leagues and fixtures")
-                            .font(.system(size: 30, weight: .semibold))
                         VStack(alignment: .leading, spacing: 38) {
                             ForEach(leagues, id: \.self) { league in
                                 leagueLandscapeSection(league, sport: sport,
@@ -623,12 +655,12 @@ struct SportFrameHome: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .onMoveCommand { direction in
-                guard direction == .down, let firstFixtureID else { return }
+                guard direction == .down, firstFixtureID != nil else { return }
                 let current = detailFocus.wrappedValue ?? ""
                 if current == "sport-detail-league-filter" && featured.isEmpty && videos.isEmpty {
-                    moveToDetailFixture(firstFixtureID, focus: detailFocus, scroll: detailScroll)
+                    moveToDetailFixtureEntry(focus: detailFocus, scroll: detailScroll)
                 } else if current.hasPrefix("highlight-") {
-                    moveToDetailFixture(firstFixtureID, focus: detailFocus, scroll: detailScroll)
+                    moveToDetailFixtureEntry(focus: detailFocus, scroll: detailScroll)
                 }
             }
             }
@@ -657,6 +689,17 @@ struct SportFrameHome: View {
         Task { @MainActor in
             await Task.yield()
             focus.wrappedValue = focusID
+        }
+    }
+
+    private func moveToDetailFixtureEntry(focus: FocusState<String?>.Binding,
+                                          scroll: ScrollViewProxy) {
+        withAnimation(.easeOut(duration: 0.2)) {
+            scroll.scrollTo("sport-detail-fixtures-entry", anchor: .center)
+        }
+        Task { @MainActor in
+            await Task.yield()
+            focus.wrappedValue = "sport-detail-fixtures-entry"
         }
     }
 
