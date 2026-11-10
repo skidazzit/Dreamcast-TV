@@ -470,9 +470,14 @@ struct SportFrameHome: View {
         }
         let featured = events.filter { isLive($0) || $0.isUpcoming }
             .sorted { ($0.startDate ?? .distantFuture) < ($1.startDate ?? .distantFuture) }
+        let firstFixtureID = leagues.compactMap { league in
+            events.filter { $0.league == league }
+                .min(by: { ($0.startDate ?? .distantFuture) < ($1.startDate ?? .distantFuture) })?.idEvent
+        }.first
 
         return ZStack {
             SportFrameCinematicBackdrop().ignoresSafeArea()
+            ScrollViewReader { detailScroll in
             ScrollView {
                 VStack(alignment: .leading, spacing: 38) {
                     HStack(spacing: 20) {
@@ -536,6 +541,15 @@ struct SportFrameHome: View {
                                 .padding(.vertical, 12)
                             }
                             .focusSection()
+                            .onMoveCommand { direction in
+                                if direction == .down, detailFocus.wrappedValue?.hasPrefix("match-detail-") == true {
+                                    if let firstHighlight = videos.first {
+                                        detailFocus.wrappedValue = "highlight-\(firstHighlight.id)"
+                                    } else if let firstFixtureID {
+                                        moveToDetailFixture(firstFixtureID, focus: detailFocus, scroll: detailScroll)
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -608,6 +622,16 @@ struct SportFrameHome: View {
                 .padding(50)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .onMoveCommand { direction in
+                guard direction == .down, let firstFixtureID else { return }
+                let current = detailFocus.wrappedValue ?? ""
+                if current == "sport-detail-league-filter" && featured.isEmpty && videos.isEmpty {
+                    moveToDetailFixture(firstFixtureID, focus: detailFocus, scroll: detailScroll)
+                } else if current.hasPrefix("highlight-") {
+                    moveToDetailFixture(firstFixtureID, focus: detailFocus, scroll: detailScroll)
+                }
+            }
+            }
         }
         .task(id: sport) {
             highlightMessage = nil
@@ -620,6 +644,19 @@ struct SportFrameHome: View {
             }
         }) { event in
             eventChannels(event, onClose: { selectedDetailEvent = nil })
+        }
+    }
+
+    private func moveToDetailFixture(_ eventID: String,
+                                     focus: FocusState<String?>.Binding,
+                                     scroll: ScrollViewProxy) {
+        let focusID = "landscape-fixture-\(eventID)"
+        withAnimation(.easeOut(duration: 0.2)) {
+            scroll.scrollTo(focusID, anchor: .center)
+        }
+        Task { @MainActor in
+            await Task.yield()
+            focus.wrappedValue = focusID
         }
     }
 
@@ -706,6 +743,7 @@ struct SportFrameHome: View {
         .buttonStyle(SportFrameArtworkButtonStyle())
         .focusEffectDisabled()
         .focused(focus, equals: focusID)
+        .id(focusID)
         .overlay {
             RoundedRectangle(cornerRadius: 18)
                 .stroke(focus.wrappedValue == focusID ? Color.white.opacity(0.9) : Color.white.opacity(0.12),
