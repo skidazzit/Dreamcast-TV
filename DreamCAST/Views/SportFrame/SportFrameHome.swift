@@ -200,6 +200,7 @@ struct SportFrameHome: View {
     var body: some View {
         ZStack {
             SportFrameCinematicBackdrop().ignoresSafeArea()
+            ScrollViewReader { mainScroll in
             ScrollView {
                 VStack(alignment: .leading, spacing: 52) {
                     HStack {
@@ -219,6 +220,7 @@ struct SportFrameHome: View {
                         .overlay(Capsule().stroke(Color.white.opacity(0.17), lineWidth: 1))
                         Spacer()
                     }
+                    .id("sportsframe-top-menu")
                     switch tab {
                     case 0: matchesPage
                     case 1: channelsPage
@@ -229,6 +231,14 @@ struct SportFrameHome: View {
                 .padding(.top, 30)
                 .padding(.bottom, 90)
                 .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .onExitCommand {
+                guard selectedSport == nil, selectedEvent == nil else { return }
+                withAnimation(.easeOut(duration: 0.2)) {
+                    mainScroll.scrollTo("sportsframe-top-menu", anchor: .top)
+                }
+                focusedCard = "nav-\(tab)"
+            }
             }
         }
         .task(id: "\(followedSportsValue)-\(sportOrderValue)-\(dayOffset)-\(credentialRevision)-\(refreshRevision)") {
@@ -338,7 +348,12 @@ struct SportFrameHome: View {
             }
             .focusSection()
             .onMoveCommand { direction in
-                moveFocusDown(direction, within: toolbarFocusIDs, to: firstMatchFocusID)
+                if direction == .up, let current = focusedCard,
+                   toolbarFocusIDs.contains(current) {
+                    focusedCard = "nav-0"
+                } else {
+                    moveFocusDown(direction, within: toolbarFocusIDs, to: firstMatchFocusID)
+                }
             }
             if followedSports.isEmpty {
                 emptyPanel("Select sports in Setup to see matches.")
