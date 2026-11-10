@@ -386,6 +386,12 @@ struct SportFrameHome: View {
             }
         }
         .onExitCommand { returnToTopMenu() }
+        .background {
+            SportFrameMenuBackBridge(isActive: tab == 0 && selectedSport == nil && selectedEvent == nil && focusedCard != nil) {
+                returnToTopMenu()
+            }
+            .frame(width: 0, height: 0)
+        }
     }
 
     private func matchShelf(_ title: String, events: [SportEvent]) -> some View {
@@ -1872,6 +1878,44 @@ private extension View {
                 .padding(-outset)
                 .allowsHitTesting(false)
             }
+    }
+}
+
+/// Receives Menu before RootShell can open the app sidebar.
+/// The SwiftUI exit handler alone runs too late for this shell's input policy.
+private struct SportFrameMenuBackBridge: UIViewRepresentable {
+    let isActive: Bool
+    let onBack: () -> Void
+
+    @MainActor final class Coordinator: NSObject, MenuBackHandling {
+        var isActive = false
+        var onBack: (() -> Void)?
+        weak var view: UIView?
+
+        func handleMenuBack() -> Bool {
+            guard isActive, view?.window?.isKeyWindow == true else { return false }
+            onBack?()
+            return true
+        }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        context.coordinator.view = view
+        MenuPressInterceptor.register(context.coordinator)
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        context.coordinator.isActive = isActive
+        context.coordinator.onBack = onBack
+    }
+
+    static func dismantleUIView(_ uiView: UIView, coordinator: Coordinator) {
+        MenuPressInterceptor.resign(coordinator)
     }
 }
 
