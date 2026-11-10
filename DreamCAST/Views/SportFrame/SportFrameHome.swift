@@ -585,18 +585,46 @@ struct SportFrameHome: View {
                         }
                     }
 
-                    Text("All leagues and fixtures")
-                        .font(.system(size: 30, weight: .semibold))
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 430), spacing: 22, alignment: .top)],
-                              alignment: .leading, spacing: 22) {
-                        ForEach(leagues, id: \.self) { league in
-                            sportLeagueCard(title: league, sport: sport,
-                                            events: events.filter { $0.league == league },
-                                            showAll: true, focusScope: "detail-", inSportDetail: true,
-                                            detailFocus: detailFocus)
+                    if leagueFilter.wrappedValue == "All Leagues" {
+                        Text("All leagues and fixtures")
+                            .font(.system(size: 30, weight: .semibold))
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 430), spacing: 22, alignment: .top)],
+                                  alignment: .leading, spacing: 22) {
+                            ForEach(leagues, id: \.self) { league in
+                                sportLeagueCard(title: league, sport: sport,
+                                                events: events.filter { $0.league == league },
+                                                showAll: true, focusScope: "detail-", inSportDetail: true,
+                                                detailFocus: detailFocus)
+                            }
                         }
+                        .focusSection()
+                    } else {
+                        HStack {
+                            if let badge = catalog.badgeURL(for: leagueFilter.wrappedValue, sport: sport,
+                                                            idLeague: events.compactMap(\.idLeague).first) {
+                                AsyncImage(url: badge) { image in image.resizable().scaledToFit() }
+                                    placeholder: { Image(systemName: sportSymbol(sport)) }
+                                    .frame(width: 34, height: 34)
+                            }
+                            Text("\(leagueFilter.wrappedValue) · Fixtures")
+                                .font(.system(size: 30, weight: .semibold))
+                            Spacer()
+                            Text("\(events.count) games")
+                                .font(.system(size: 18, weight: .medium))
+                                .foregroundStyle(.secondary)
+                                .padding(.horizontal, 16).padding(.vertical, 9)
+                                .background(.white.opacity(0.08), in: Capsule())
+                        }
+                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 20), GridItem(.flexible(), spacing: 20)],
+                                  alignment: .leading, spacing: 20) {
+                            ForEach(events.sorted(by: {
+                                ($0.startDate ?? .distantFuture) < ($1.startDate ?? .distantFuture)
+                            })) { event in
+                                landscapeFixtureCard(event, focus: detailFocus)
+                            }
+                        }
+                        .focusSection()
                     }
-                    .focusSection()
                     if events.isEmpty { emptyPanel("No matches available for this sport on the selected day.") }
                 }
                 .padding(50)
@@ -628,6 +656,49 @@ struct SportFrameHome: View {
                     highlightMessage = "Install YouTube on Apple TV to watch this highlight."
                 }
             }
+        }
+    }
+
+    private func landscapeFixtureCard(_ event: SportEvent,
+                                      focus: FocusState<String?>.Binding) -> some View {
+        let focusID = "landscape-fixture-\(event.idEvent)"
+        let score = fixtures.score(for: event)
+        return Button { selectedDetailEvent = event } label: {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 12) {
+                    matchBadge(event.homeBadge)
+                    Text(event.strHomeTeam ?? "Home")
+                        .font(.system(size: 20, weight: .semibold))
+                        .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(score.home.flatMap { home in score.away.map { "\(home) – \($0)" } } ?? "VS")
+                        .font(.system(size: 21, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .fixedSize()
+                    matchBadge(event.awayBadge)
+                    Text(event.strAwayTeam ?? "Away")
+                        .font(.system(size: 20, weight: .semibold))
+                        .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(event.timeLabel)
+                        .font(.system(size: 18, weight: .semibold))
+                        .fixedSize()
+                        .padding(.horizontal, 10).padding(.vertical, 8)
+                        .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
+                }
+                Divider().overlay(.white.opacity(0.15))
+                SportFrameFixtureBroadcasters(eventID: event.idEvent)
+            }
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
+        }
+        .buttonStyle(SportFrameArtworkButtonStyle())
+        .focusEffectDisabled()
+        .focused(focus, equals: focusID)
+        .overlay {
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(focus.wrappedValue == focusID ? Color.white.opacity(0.9) : Color.white.opacity(0.12),
+                        lineWidth: focus.wrappedValue == focusID ? 2 : 1)
+                .allowsHitTesting(false)
         }
     }
 
@@ -1414,6 +1485,82 @@ private struct SportFrameDetailFocusHost<Content: View>: View {
                 await Task.yield()
                 focusedItem = "sport-detail-back"
             }
+    }
+}
+
+private struct SportFrameTVListing: Decodable, Identifiable {
+    let id: String
+    let strChannel: String?
+    let strLogo: String?
+    var name: String { strChannel ?? "TV Channel" }
+    var logoURL: URL? { strLogo.flatMap(URL.init(string:)) }
+}
+
+private struct SportFrameTVListingResponse: Decodable {
+    let tvevent: [SportFrameTVListing]?
+}
+
+/// TheSportsDB listings are kept only in each visible card's short-lived view state.
+/// There is no saved event-to-broadcaster map.
+private struct SportFrameFixtureBroadcasters: View {
+    let eventID: String
+    @State private var listings: [SportFrameTVListing] = []
+    @State private var loading = true
+    @State private var loaded = false
+
+    var body: some View {
+        HStack(spacing: 18) {
+            if loading {
+                ProgressView().controlSize(.small)
+                Text("Checking TV listings…").foregroundStyle(.secondary)
+            } else if listings.isEmpty {
+                Image(systemName: "tv")
+                Text("No broadcasters listed yet").foregroundStyle(.secondary)
+            } else {
+                ForEach(Array(listings.prefix(3))) { listing in
+                    HStack(spacing: 8) {
+                        if let logo = listing.logoURL {
+                            AsyncImage(url: logo) { image in image.resizable().scaledToFit() }
+                                placeholder: { Image(systemName: "tv") }
+                                .frame(width: 48, height: 27)
+                        }
+                        Text(listing.name).font(.system(size: 15, weight: .medium))
+                            .lineLimit(1)
+                    }
+                }
+                if listings.count > 3 {
+                    Text("+\(listings.count - 3)").foregroundStyle(.secondary)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .font(.system(size: 15))
+        .frame(height: 31, alignment: .leading)
+        .task(id: eventID) {
+            guard !loaded else { return }
+            guard let url = URL(string: "https://www.thesportsdb.com/api/v1/json/\(SportsDBAccess.apiKey)/lookuptv.php?id=\(eventID)") else {
+                loading = false
+                loaded = true
+                return
+            }
+            do {
+                var request = URLRequest(url: url)
+                request.timeoutInterval = 8
+                let (data, response) = try await URLSession.shared.data(for: request)
+                if !Task.isCancelled, (response as? HTTPURLResponse)?.statusCode == 200 {
+                    let rows = try JSONDecoder().decode(SportFrameTVListingResponse.self, from: data).tvevent ?? []
+                    var names = Set<String>()
+                    listings = rows.filter {
+                        names.insert(ChannelMatcher.normalize($0.name)).inserted
+                    }
+                }
+            } catch {
+                // Show a clear empty state when the provider has no usable listing.
+            }
+            guard !Task.isCancelled else { return }
+            loading = false
+            loaded = true
+        }
     }
 }
 
