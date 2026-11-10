@@ -281,8 +281,9 @@ struct SportFrameHome: View {
             eventChannels(event, onClose: { selectedEvent = nil })
         }
         .sheet(item: $selectedSport) { selection in
-            SportFrameDetailFocusHost { detailFocus, scope in
-                sportDetailPage(selection.name, detailFocus: detailFocus, focusScope: scope)
+            SportFrameDetailFocusHost { detailFocus, scope, leagueFilter in
+                sportDetailPage(selection.name, detailFocus: detailFocus,
+                                focusScope: scope, leagueFilter: leagueFilter)
             }
         }
     }
@@ -452,12 +453,20 @@ struct SportFrameHome: View {
 
     private func sportDetailPage(_ sport: String,
                                  detailFocus: FocusState<String?>.Binding,
-                                 focusScope: Namespace.ID) -> some View {
-        let events = filteredMatches.filter { fixtures.eventSports[$0.idEvent] == sport }
-        let leagues = Array(Set(events.map(\.league))).sorted {
+                                 focusScope: Namespace.ID,
+                                 leagueFilter: Binding<String>) -> some View {
+        let allEvents = filteredMatches.filter { fixtures.eventSports[$0.idEvent] == sport }
+        let allLeagues = Array(Set(allEvents.map(\.league))).sorted {
             let left = leagueRank($0, sport: sport)
             let right = leagueRank($1, sport: sport)
             return left == right ? $0.localizedStandardCompare($1) == .orderedAscending : left < right
+        }
+        let events = leagueFilter.wrappedValue == "All Leagues" ? allEvents
+            : allEvents.filter { $0.league == leagueFilter.wrappedValue }
+        let leagues = allLeagues.filter { leagueFilter.wrappedValue == "All Leagues" || $0 == leagueFilter.wrappedValue }
+        let videos = sportHighlights.videos.filter {
+            leagueFilter.wrappedValue == "All Leagues" ||
+                $0.strLeague?.localizedCaseInsensitiveCompare(leagueFilter.wrappedValue) == .orderedSame
         }
         let featured = events.filter { isLive($0) || $0.isUpcoming }
             .sorted { ($0.startDate ?? .distantFuture) < ($1.startDate ?? .distantFuture) }
@@ -485,6 +494,30 @@ struct SportFrameHome: View {
                             }
                     }
 
+                    HStack(spacing: 16) {
+                        Text("Filter by league")
+                            .font(.system(size: 19, weight: .medium))
+                            .foregroundStyle(.secondary)
+                        Menu {
+                            Button("All Leagues") { leagueFilter.wrappedValue = "All Leagues" }
+                            ForEach(allLeagues, id: \.self) { league in
+                                Button(league) { leagueFilter.wrappedValue = league }
+                            }
+                        } label: {
+                            Label(leagueFilter.wrappedValue, systemImage: "line.3.horizontal.decrease")
+                                .font(.system(size: 21, weight: .semibold))
+                        }
+                        .buttonStyle(.bordered)
+                        .focused(detailFocus, equals: "sport-detail-league-filter")
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(detailFocus.wrappedValue == "sport-detail-league-filter" ? .white : .clear, lineWidth: 2)
+                                .allowsHitTesting(false)
+                        }
+                        Spacer()
+                    }
+                    .focusSection()
+
                     if !featured.isEmpty {
                         VStack(alignment: .leading, spacing: 14) {
                             Text("Featured matches").font(.system(size: 30, weight: .semibold))
@@ -506,13 +539,13 @@ struct SportFrameHome: View {
                             .font(.system(size: 30, weight: .semibold))
                         if sportHighlights.loading {
                             ProgressView("Finding highlights…")
-                        } else if sportHighlights.videos.isEmpty {
-                            Text("No video highlights were found for yesterday.")
+                        } else if videos.isEmpty {
+                            Text("No video highlights were found for this league yesterday.")
                                 .foregroundStyle(.secondary)
                         } else {
                             ScrollView(.horizontal) {
                                 LazyHStack(alignment: .top, spacing: 18) {
-                                    ForEach(sportHighlights.videos) { video in
+                                    ForEach(videos) { video in
                                         Button { openSportHighlight(video) } label: {
                                             VStack(alignment: .leading, spacing: 10) {
                                                 AsyncImage(url: video.thumbnailURL) { image in
@@ -1370,11 +1403,12 @@ private struct SportFrameSportSelection: Identifiable {
 /// Owns focus for the presented sport screen, separate from the main Sports page.
 private struct SportFrameDetailFocusHost<Content: View>: View {
     @FocusState private var focusedItem: String?
+    @State private var selectedLeague = "All Leagues"
     @Namespace private var scope
-    let content: (FocusState<String?>.Binding, Namespace.ID) -> Content
+    let content: (FocusState<String?>.Binding, Namespace.ID, Binding<String>) -> Content
 
     var body: some View {
-        content($focusedItem, scope)
+        content($focusedItem, scope, $selectedLeague)
             .focusScope(scope)
             .task {
                 await Task.yield()
@@ -1386,6 +1420,7 @@ private struct SportFrameDetailFocusHost<Content: View>: View {
 private struct SportFrameVideoHighlight: Decodable, Identifiable {
     let idEvent: String?
     let strEvent: String?
+    let strLeague: String?
     let strVideo: String?
     let strThumb: String?
     let strPoster: String?
