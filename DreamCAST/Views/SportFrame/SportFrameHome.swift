@@ -414,21 +414,31 @@ struct SportFrameHome: View {
                     }
                     .font(.system(size: 29, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(0.88))
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 9)
                 }
                 .buttonStyle(SportFrameArtworkButtonStyle())
                 .focused($focusedCard, equals: "sport-header-\(sport)")
-                .sportFrameFocusOutline(focusedCard == "sport-header-\(sport)")
+                .sportFrameFocusOutline(focusedCard == "sport-header-\(sport)", radius: 12)
             }
-            ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: 18) {
-                    ForEach(leagues, id: \.self) { league in
-                        sportLeagueCard(title: league, sport: sport, events: events.filter { $0.league == league })
+            ForEach(leagues, id: \.self) { league in
+                let leagueEvents = events.filter { $0.league == league }.sorted {
+                    ($0.startDate ?? .distantFuture) < ($1.startDate ?? .distantFuture)
+                }
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(league)
+                        .font(.system(size: 23, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.9))
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: 4),
+                              alignment: .leading, spacing: 16) {
+                        ForEach(Array(leagueEvents.enumerated()), id: \.element.idEvent) { index, event in
+                            mainFixtureCard(event, sport: sport, league: league,
+                                            isFirst: index < 4,
+                                            isLast: index >= ((leagueEvents.count - 1) / 4) * 4)
+                        }
                     }
                 }
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.vertical, 12)
             }
-            .scrollClipDisabled()
             if !events.isEmpty {
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: 18) {
@@ -439,6 +449,45 @@ struct SportFrameHome: View {
             }
         }
         .focusSection()
+    }
+
+    private func mainFixtureCard(_ event: SportEvent, sport: String, league: String,
+                                 isFirst: Bool, isLast: Bool) -> some View {
+        let focusID = "main-fixture-\(sport)-\(league)-\(event.idEvent)"
+        return Button { selectedEvent = event } label: {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack(spacing: 9) {
+                        sportBadge(event.homeBadge)
+                        Text(event.strHomeTeam ?? "Home")
+                            .lineLimit(2)
+                    }
+                    HStack(spacing: 9) {
+                        sportBadge(event.awayBadge)
+                        Text(event.strAwayTeam ?? "Away")
+                            .lineLimit(2)
+                    }
+                }
+                .font(.system(size: 16, weight: .medium))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Text(event.timeLabel)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.78))
+                    .fixedSize()
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, minHeight: 126, alignment: .leading)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 15))
+        }
+        .buttonStyle(SportFrameArtworkButtonStyle())
+        .focused($focusedCard, equals: focusID)
+        .sportFrameFocusOutline(focusedCard == focusID, radius: 15)
+        .onMoveCommand { direction in
+            guard focusedCard == focusID else { return }
+            if (direction == .up && isFirst) || (direction == .down && isLast) {
+                focusedCard = "sport-header-\(sport)"
+            }
+        }
     }
 
     private func leagueRank(_ name: String, sport: String) -> Int {
