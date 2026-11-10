@@ -502,9 +502,17 @@ struct SportFrameHome: View {
                     .font(.system(size: 23, weight: .semibold))
                     .lineLimit(2)
             }
-            ForEach(Array(ordered.enumerated()), id: \.element.idEvent) { index, event in
-                mainFixtureTableRow(event, sport: sport, league: league,
-                                    isFirst: index == 0, isLast: index == ordered.count - 1)
+            if ordered.count > 10 {
+                ScrollView(.vertical) {
+                    mainLeagueRows(ordered, sport: sport, league: league)
+                }
+                .frame(height: 800)
+                .scrollIndicators(.visible)
+                Text("\(ordered.count) matches · Scroll for more")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+            } else {
+                mainLeagueRows(ordered, sport: sport, league: league)
             }
         }
         .padding(22)
@@ -516,10 +524,14 @@ struct SportFrameHome: View {
         .focusSection()
     }
 
-    private func compactTeamCode(_ name: String?) -> String {
-        let words = (name ?? "Team").split(separator: " ")
-        guard let last = words.last else { return "TEAM" }
-        return String(last.prefix(3)).uppercased()
+    private func mainLeagueRows(_ events: [SportEvent], sport: String, league: String) -> some View {
+        VStack(spacing: 0) {
+            ForEach(Array(events.enumerated()), id: \.element.idEvent) { index, event in
+                mainFixtureTableRow(event, sport: sport, league: league,
+                                    isFirst: index == 0, isLast: index == events.count - 1)
+                if index < events.count - 1 { Divider().opacity(0.25) }
+            }
+        }
     }
 
     private func mainFixtureTableRow(_ event: SportEvent, sport: String, league: String,
@@ -527,22 +539,28 @@ struct SportFrameHome: View {
         let focusID = "main-fixture-\(sport)-\(league)-\(event.idEvent)"
         let score = fixtures.score(for: event)
         return Button { selectedEvent = event } label: {
-            HStack(spacing: 9) {
-                sportBadge(event.homeBadge)
-                Text(compactTeamCode(event.strHomeTeam))
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 7) {
+                    HStack(spacing: 10) {
+                        sportBadge(event.homeBadge)
+                        Text(event.strHomeTeam ?? "Home")
+                            .lineLimit(1).minimumScaleFactor(0.8)
+                    }
+                    HStack(spacing: 10) {
+                        sportBadge(event.awayBadge)
+                        Text(event.strAwayTeam ?? "Away")
+                            .lineLimit(1).minimumScaleFactor(0.8)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 Text(score.home.flatMap { home in score.away.map { "\(home) : \($0)" } } ?? event.timeLabel)
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.65))
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.7))
                     .fixedSize()
-                Text(compactTeamCode(event.strAwayTeam))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                sportBadge(event.awayBadge)
             }
-            .font(.system(size: 18, weight: .medium))
-            .padding(.horizontal, 7)
-            .padding(.vertical, 8)
-            .frame(maxWidth: .infinity, minHeight: 49)
+            .font(.system(size: 16, weight: .medium))
+            .padding(.horizontal, 9)
+            .frame(maxWidth: .infinity, minHeight: 79)
             .contentShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(SportFrameArtworkButtonStyle())
