@@ -20,6 +20,7 @@ struct SportFrameHome: View {
     @State private var matchSportFilter = "All Sports"
     @State private var matchLeagueFilter = "All Leagues"
     @State private var selectedEvent: SportEvent?
+    @State private var selectedSport: SportFrameSportSelection?
     @State private var pendingPlayerChannel: UnifiedChannel?
     @StateObject private var channelResolver = SportFrameBroadcastResolver()
     @FocusState private var focusedCard: String?
@@ -276,6 +277,9 @@ struct SportFrameHome: View {
         }) { event in
             eventChannels(event)
         }
+        .sheet(item: $selectedSport) { selection in
+            sportDetailPage(selection.name)
+        }
     }
 
     private func navigation(_ label: String, index: Int, symbol: String) -> some View {
@@ -397,18 +401,28 @@ struct SportFrameHome: View {
         }
         return VStack(alignment: .leading, spacing: 20) {
             if !events.isEmpty {
-                Text("\(sport) ›")
+                Button { selectedSport = SportFrameSportSelection(name: sport) } label: {
+                    HStack(spacing: 9) {
+                        Text(sport)
+                        Image(systemName: "chevron.right").font(.system(size: 20, weight: .semibold))
+                    }
                     .font(.system(size: 29, weight: .semibold))
                     .foregroundStyle(Color.white.opacity(0.88))
+                }
+                .buttonStyle(SportFrameArtworkButtonStyle())
+                .focused($focusedCard, equals: "sport-header-\(sport)")
+                .sportFrameFocusOutline(focusedCard == "sport-header-\(sport)")
             }
             ScrollView(.horizontal) {
-                LazyHStack(alignment: .top, spacing: 18) {
+                HStack(alignment: .top, spacing: 18) {
                     ForEach(leagues, id: \.self) { league in
                         sportLeagueCard(title: league, sport: sport, events: events.filter { $0.league == league })
                     }
                 }
-                .padding(.vertical, 8)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.vertical, 12)
             }
+            .scrollClipDisabled()
             if !events.isEmpty {
                 ScrollView(.horizontal) {
                     LazyHStack(alignment: .top, spacing: 18) {
@@ -431,7 +445,69 @@ struct SportFrameHome: View {
         return 4
     }
 
-    private func sportLeagueCard(title: String, sport: String, events: [SportEvent]) -> some View {
+    private func sportDetailPage(_ sport: String) -> some View {
+        let events = filteredMatches.filter { fixtures.eventSports[$0.idEvent] == sport }
+        let leagues = Array(Set(events.map(\.league))).sorted {
+            let left = leagueRank($0, sport: sport)
+            let right = leagueRank($1, sport: sport)
+            return left == right ? $0.localizedStandardCompare($1) == .orderedAscending : left < right
+        }
+        let featured = events.filter { isLive($0) || $0.isUpcoming }
+            .sorted { ($0.startDate ?? .distantFuture) < ($1.startDate ?? .distantFuture) }
+
+        return ZStack {
+            SportFrameCinematicBackdrop().ignoresSafeArea()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 38) {
+                    HStack(spacing: 20) {
+                        Image(systemName: sportSymbol(sport))
+                            .font(.system(size: 38)).foregroundStyle(accent)
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text(sport).font(.system(size: 42, weight: .bold))
+                            Text("\(events.count) matches · \(leagues.count) leagues")
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Back to Sports") { selectedSport = nil }
+                            .buttonStyle(.bordered)
+                            .focused($focusedCard, equals: "sport-detail-back")
+                            .sportFrameFocusOutline(focusedCard == "sport-detail-back")
+                    }
+
+                    if !featured.isEmpty {
+                        VStack(alignment: .leading, spacing: 14) {
+                            Text("Match highlights").font(.system(size: 30, weight: .semibold))
+                            ScrollView(.horizontal) {
+                                LazyHStack(alignment: .top, spacing: 18) {
+                                    ForEach(featured) { event in
+                                        matchCard(event, focusScope: "detail-\(sport)")
+                                    }
+                                }
+                                .padding(.vertical, 12)
+                            }
+                        }
+                    }
+
+                    Text("All leagues and fixtures")
+                        .font(.system(size: 30, weight: .semibold))
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 430), spacing: 22, alignment: .top)],
+                              alignment: .leading, spacing: 22) {
+                        ForEach(leagues, id: \.self) { league in
+                            sportLeagueCard(title: league, sport: sport,
+                                            events: events.filter { $0.league == league },
+                                            showAll: true, focusScope: "detail-")
+                        }
+                    }
+                    if events.isEmpty { emptyPanel("No matches available for this sport on the selected day.") }
+                }
+                .padding(50)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private func sportLeagueCard(title: String, sport: String, events: [SportEvent],
+                                 showAll: Bool = false, focusScope: String = "") -> some View {
         let leagueID = events.compactMap(\.idLeague).first
         let badge = events.compactMap(\.leagueBadge).first ?? catalog.badgeURL(for: title, sport: sport, idLeague: leagueID)
         return VStack(alignment: .leading, spacing: 15) {
@@ -452,7 +528,7 @@ struct SportFrameHome: View {
                     .font(.system(size: 20, weight: .semibold))
                     .fixedSize(horizontal: false, vertical: true)
             }
-            ForEach(events.prefix(5)) { event in
+            ForEach(events.prefix(showAll ? events.count : 5)) { event in
                 Button { selectedEvent = event } label: {
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(alignment: .top, spacing: 10) {
@@ -486,12 +562,12 @@ struct SportFrameHome: View {
                 }
                 .buttonStyle(SportFrameArtworkButtonStyle())
                 .focusEffectDisabled()
-                .focused($focusedCard, equals: "league-\(sport)-\(title)-\(event.idEvent)")
-                .background(focusedCard == "league-\(sport)-\(title)-\(event.idEvent)" ? Color.white.opacity(0.09) : Color.clear,
+                .focused($focusedCard, equals: "\(focusScope)league-\(sport)-\(title)-\(event.idEvent)")
+                .background(focusedCard == "\(focusScope)league-\(sport)-\(title)-\(event.idEvent)" ? Color.white.opacity(0.09) : Color.clear,
                             in: RoundedRectangle(cornerRadius: 9))
                 .overlay {
                     RoundedRectangle(cornerRadius: 9)
-                        .stroke(focusedCard == "league-\(sport)-\(title)-\(event.idEvent)" ? Color.white.opacity(0.86) : .clear,
+                        .stroke(focusedCard == "\(focusScope)league-\(sport)-\(title)-\(event.idEvent)" ? Color.white.opacity(0.86) : .clear,
                                 lineWidth: 2)
                         .allowsHitTesting(false)
                 }
@@ -500,6 +576,7 @@ struct SportFrameHome: View {
         }
         .padding(20)
         .frame(width: 430, alignment: .topLeading)
+        .fixedSize(horizontal: false, vertical: true)
         .sportFrameGlassPanel(radius: 19)
         .task(id: "badge-\(sport)-\(leagueID ?? title)") {
             if badge == nil { await catalog.loadBadge(for: title, sport: sport, idLeague: leagueID) }
@@ -1180,6 +1257,11 @@ private struct SportFrameMatchChannelRow: View {
                     in: RoundedRectangle(cornerRadius: 16))
         .sportFrameFocusOutline(isFocused, radius: 16)
     }
+}
+
+private struct SportFrameSportSelection: Identifiable {
+    let name: String
+    var id: String { name }
 }
 
 private struct SportFrameCinematicBackdrop: View {
